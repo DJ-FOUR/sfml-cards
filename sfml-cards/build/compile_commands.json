@@ -1,0 +1,50 @@
+[
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\card.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\card.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/card.cpp",
+  "output": "CMakeFiles/main.dir/src/card.cpp.obj"
+},
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\character.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\character.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/character.cpp",
+  "output": "CMakeFiles/main.dir/src/character.cpp.obj"
+},
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\game_state.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\game_state.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/game_state.cpp",
+  "output": "CMakeFiles/main.dir/src/game_state.cpp.obj"
+},
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\main.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\main.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/main.cpp",
+  "output": "CMakeFiles/main.dir/src/main.cpp.obj"
+},
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\renderer.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\renderer.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/renderer.cpp",
+  "output": "CMakeFiles/main.dir/src/renderer.cpp.obj"
+},
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\run_state.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\run_state.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/run_state.cpp",
+  "output": "CMakeFiles/main.dir/src/run_state.cpp.obj"
+},
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\save.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\save.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/save.cpp",
+  "output": "CMakeFiles/main.dir/src/save.cpp.obj"
+},
+{
+  "directory": "D:/Code/vs_code/sfml-cards/build",
+  "command": "D:\\Software(English)\\Mingw14.2.0\\mingw64\\bin\\g++.exe -DSFML_STATIC @CMakeFiles/main.dir/includes_CXX.rsp -g -std=gnu++17 -o CMakeFiles\\main.dir\\src\\skill.cpp.obj -c D:\\Code\\vs_code\\sfml-cards\\src\\skill.cpp",
+  "file": "D:/Code/vs_code/sfml-cards/src/skill.cpp",
+  "output": "CMakeFiles/main.dir/src/skill.cpp.obj"
+}
+]

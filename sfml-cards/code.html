@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SHADOW DECK - Character Selection</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400..900&amp;family=Hanken+Grotesk:ital,wght@0,100..900;1,100..900&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#690005",
+                        "on-secondary-container": "#342800",
+                        "surface-container-lowest": "#0d0e0d",
+                        "error": "#ffb4ab",
+                        "surface-bright": "#393938",
+                        "on-primary-fixed-variant": "#374c3b",
+                        "on-primary": "#213525",
+                        "surface-variant": "#343533",
+                        "on-secondary-fixed": "#241a00",
+                        "on-primary-fixed": "#0c2012",
+                        "tertiary-fixed-dim": "#ffba44",
+                        "background": "#121412",
+                        "tertiary-container": "#3b2500",
+                        "surface-dim": "#121412",
+                        "error-container": "#93000a",
+                        "inverse-primary": "#4e6452",
+                        "primary-fixed": "#d0e9d2",
+                        "surface-container-low": "#1b1c1a",
+                        "on-tertiary": "#442c00",
+                        "on-surface": "#e3e2df",
+                        "outline-variant": "#434843",
+                        "primary": "#b5cdb7",
+                        "secondary-container": "#af8d11",
+                        "on-primary-container": "#809782",
+                        "on-secondary-fixed-variant": "#574500",
+                        "outline": "#8d928b",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary": "#3c2f00",
+                        "tertiary-fixed": "#ffddaf",
+                        "on-background": "#e3e2df",
+                        "surface-container": "#1f201e",
+                        "on-tertiary-container": "#c28500",
+                        "surface": "#121412",
+                        "on-surface-variant": "#c3c8c0",
+                        "secondary": "#e9c349",
+                        "inverse-surface": "#e3e2df",
+                        "inverse-on-surface": "#30312f",
+                        "surface-tint": "#b5cdb7",
+                        "surface-container-high": "#292a28",
+                        "primary-fixed-dim": "#b5cdb7",
+                        "on-tertiary-fixed": "#281800",
+                        "surface-container-highest": "#343533",
+                        "on-tertiary-fixed-variant": "#614000",
+                        "primary-container": "#1a2e1f",
+                        "tertiary": "#ffba44",
+                        "secondary-fixed": "#ffe088",
+                        "secondary-fixed-dim": "#e9c349"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "unit": "4px",
+                        "container-max": "1280px",
+                        "margin-desktop": "48px",
+                        "gutter": "16px"
+                    },
+                    "fontFamily": {
+                        "body-lg": ["Hanken Grotesk"],
+                        "headline-lg": ["Cinzel"],
+                        "headline-md": ["Cinzel"],
+                        "label-sm": ["JetBrains Mono"],
+                        "body-md": ["Hanken Grotesk"],
+                        "headline-sm": ["Cinzel"],
+                        "label-lg": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "headline-lg": ["48px", {"lineHeight": "1.1", "letterSpacing": "0.05em", "fontWeight": "700"}],
+                        "headline-md": ["32px", {"lineHeight": "1.2", "letterSpacing": "0.03em", "fontWeight": "600"}],
+                        "label-sm": ["12px", {"lineHeight": "1.1", "fontWeight": "500"}],
+                        "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                        "headline-sm": ["24px", {"lineHeight": "1.2", "fontWeight": "600"}],
+                        "label-lg": ["14px", {"lineHeight": "1.2", "letterSpacing": "0.1em", "fontWeight": "500"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: #121412;
+            color: #e3e2df;
+            overflow-x: hidden;
+        }
+
+        .active-void {
+            background-image: 
+                linear-gradient(45deg, rgba(212, 175, 55, 0.03) 1px, transparent 1px),
+                linear-gradient(-45deg, rgba(212, 175, 55, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .geometric-facet {
+            background: linear-gradient(135deg, #1A2E1F 0%, #0F1A12 100%);
+            clip-path: polygon(0 0, 100% 0, 100% 90%, 90% 100%, 0 100%);
+        }
+
+        .button-clipped {
+            clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0 30%);
+        }
+
+        .amber-glow-outline {
+            outline: 1px solid rgba(240, 165, 0, 0.4);
+            box-shadow: 0 0 15px rgba(240, 165, 0, 0.1);
+        }
+
+        .card-container {
+            perspective: 1000px;
+        }
+
+        .card-inner {
+            transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+            transform-style: preserve-3d;
+        }
+
+        .card-container:hover .card-inner {
+            transform: translateY(-20px) rotateY(5deg);
+        }
+
+        .crystalline-stroke {
+            border: 1px solid #D4AF37;
+            position: relative;
+        }
+
+        .crystalline-stroke::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border: 1px solid rgba(240, 165, 0, 0.2);
+            pointer-events: none;
+        }
+
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+</head>
+<body class="font-body-md text-body-md active-void min-h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="bg-surface/80 backdrop-blur-md border-b border-secondary/20 docked full-width top z-50 fixed top-0 left-0 w-full">
+<div class="flex justify-between items-center w-full px-margin-mobile md:px-margin-desktop h-16">
+<div class="flex items-center gap-4">
+<button class="text-primary hover:text-secondary transition-colors scale-95 active:scale-90 duration-300">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md text-secondary tracking-[0.2em] uppercase">SHADOW DECK</h1>
+</div>
+<nav class="hidden md:flex gap-8">
+<a class="font-label-lg text-label-lg text-secondary font-bold hover:text-secondary transition-colors duration-300" href="#">Sanctum</a>
+<a class="font-label-lg text-label-lg text-on-surface-variant hover:text-secondary transition-colors duration-300" href="#">Arsenal</a>
+<a class="font-label-lg text-label-lg text-on-surface-variant hover:text-secondary transition-colors duration-300" href="#">Nexus</a>
+<a class="font-label-lg text-label-lg text-on-surface-variant hover:text-secondary transition-colors duration-300" href="#">Archives</a>
+</nav>
+<div class="flex items-center gap-4">
+<button class="text-primary hover:text-secondary transition-colors scale-95 active:scale-90 duration-300">
+<span class="material-symbols-outlined">account_balance_wallet</span>
+</button>
+<button class="text-primary hover:text-secondary transition-colors scale-95 active:scale-90 duration-300">
+<span class="material-symbols-outlined">settings</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow pt-24 pb-20 px-margin-mobile md:px-margin-desktop max-w-container-max mx-auto w-full relative">
+<!-- Header Section -->
+<div class="mb-12 text-center">
+<h2 class="font-headline-lg text-headline-lg text-on-background mb-2">SELECT YOUR VESSEL</h2>
+<p class="font-label-lg text-label-lg text-secondary tracking-widest uppercase">Decipher the path of the abstract</p>
+</div>
+<!-- Bento Character Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+<!-- Card 1: The Vanguard (争锋者) -->
+<div class="card-container group">
+<div class="card-inner h-full geometric-facet amber-glow-outline crystalline-stroke p-1">
+<div class="relative overflow-hidden aspect-[3/4] bg-surface-container">
+<img alt="The Vanguard character" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBzXUu5NrQ4H8MjoPNpDX_xaxsO3iBjcCVHDIhTbRGFbCeZR36emNGfq88-hJRS-4VyYCz1Z2AyYxyH66FLlsXlOc2KUReF9B6WzOJjlhAsNn5tzHbI4m4-nKm5387cP07JijuYxw3E3F3xnX1eDEI5AF4yerj8eZOAQeMe8-n_39eW1sHrEaQWbgKXpzBLkm4RPPKuf7zMp-cgnchVSHdr2Jtso7o3iBNUYwrJdg4OLXAaXv6C5QLtBPHMbJXQdpX9e-5vNz8NrA"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-60"></div>
+<div class="absolute top-4 left-4">
+<span class="bg-secondary text-surface px-3 py-1 font-label-sm text-label-sm uppercase tracking-tighter">Class 01</span>
+</div>
+</div>
+<div class="p-6">
+<h3 class="font-headline-sm text-headline-sm text-secondary mb-1">争锋者</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest mb-4">The Vanguard</p>
+<div class="flex gap-2 mb-6">
+<span class="w-8 h-1 bg-secondary"></span>
+<span class="w-8 h-1 bg-secondary/30"></span>
+<span class="w-8 h-1 bg-secondary/30"></span>
+</div>
+<button class="w-full py-3 bg-secondary text-surface font-label-lg text-label-lg uppercase tracking-widest button-clipped hover:bg-secondary-fixed transition-colors active:scale-95 duration-150">
+                            Synchronize
+                        </button>
+</div>
+</div>
+</div>
+<!-- Card 2: The Strategist (谋略家) -->
+<div class="card-container group">
+<div class="card-inner h-full geometric-facet amber-glow-outline crystalline-stroke p-1">
+<div class="relative overflow-hidden aspect-[3/4] bg-surface-container">
+<img alt="The Strategist character" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBvF80PT7az9wBf2hNx43krYraCox0P6bNndoSdtY-7EUjA1xdcl9-nTIdUROoFeRCrgDWE9HPlaGPGO18-M2DevklXUPMLOhVwq3TH5l-wsnSKsqm7oOImJVIY-ECH6ZtNoRx6X8YHa85noGXiMpZh8Rl2dHpYrtjgGlUekwX0VrdFijAJPeMxx_d7YhPhwI3nk0Bp4NrGl-vwD0iGzBThLxYfQ_2RxFhVy-2qY1pZDuLEV6l5LANRiuxJvmE06dF3vvTGzAWi0A"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-60"></div>
+<div class="absolute top-4 left-4">
+<span class="bg-secondary text-surface px-3 py-1 font-label-sm text-label-sm uppercase tracking-tighter">Class 02</span>
+</div>
+</div>
+<div class="p-6">
+<h3 class="font-headline-sm text-headline-sm text-secondary mb-1">谋略家</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest mb-4">The Strategist</p>
+<div class="flex gap-2 mb-6">
+<span class="w-8 h-1 bg-secondary"></span>
+<span class="w-8 h-1 bg-secondary"></span>
+<span class="w-8 h-1 bg-secondary/30"></span>
+</div>
+<button class="w-full py-3 border border-secondary text-secondary font-label-lg text-label-lg uppercase tracking-widest button-clipped hover:bg-secondary/10 transition-colors active:scale-95 duration-150">
+                            Synchronize
+                        </button>
+</div>
+</div>
+</div>
+<!-- Card 3: The Controller (掌控者) -->
+<div class="card-container group">
+<div class="card-inner h-full geometric-facet amber-glow-outline crystalline-stroke p-1">
+<div class="relative overflow-hidden aspect-[3/4] bg-surface-container">
+<img alt="The Controller character" class="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA9X7DK60ViDjJpRkY4ZPtw2MOdke3Es3GEBi35ryNu7_eXPTwbu39kakZTK4mVuoU2VUGBRUzfJP1ulQttJhMNJJcDZd7xwR5osKdl3n0KKWdoU_oMDGXVtWWzPFUkj-DHt7XOGjisf2CHQYrOnQVsONDkipzO5YgHiespmLKoFrUEyKkj867xuSijHbY95JTn_umhwXw7qi60nPzBZGxPfaOCJWRF-cdq3BZqnwsbl84DM9m1HV96r2fqS25bxKoC-S3Lmh0QaA"/>
+<div class="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-60"></div>
+<div class="absolute top-4 left-4">
+<span class="bg-secondary text-surface px-3 py-1 font-label-sm text-label-sm uppercase tracking-tighter">Class 03</span>
+</div>
+</div>
+<div class="p-6">
+<h3 class="font-headline-sm text-headline-sm text-secondary mb-1">掌控者</h3>
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-widest mb-4">The Controller</p>
+<div class="flex gap-2 mb-6">
+<span class="w-8 h-1 bg-secondary"></span>
+<span class="w-8 h-1 bg-secondary"></span>
+<span class="w-8 h-1 bg-secondary"></span>
+</div>
+<button class="w-full py-3 border border-secondary text-secondary font-label-lg text-label-lg uppercase tracking-widest button-clipped hover:bg-secondary/10 transition-colors active:scale-95 duration-150">
+                            Synchronize
+                        </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Decorative Mesh Detail -->
+<div class="mt-20 flex justify-center">
+<div class="w-64 h-[1px] bg-gradient-to-r from-transparent via-secondary/40 to-transparent"></div>
+</div>
+</main>
+<!-- Navigation Drawer (Desktop Sidebar) -->
+<aside class="hidden lg:flex flex-col h-full py-8 fixed left-0 top-0 w-72 bg-surface-container-low border-r border-secondary/10 z-40 pt-20">
+<div class="px-8 mb-8">
+<div class="flex items-center gap-4 mb-2">
+<div class="w-12 h-12 rounded-full border-2 border-secondary p-1">
+<div class="w-full h-full bg-secondary-container rounded-full flex items-center justify-center">
+<span class="material-symbols-outlined text-surface">person</span>
+</div>
+</div>
+<div>
+<p class="font-headline-sm text-[16px] text-secondary">ETHER-KNIGHT</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant">Rank: Grandmaster</p>
+</div>
+</div>
+</div>
+<nav class="flex-grow">
+<a class="flex items-center gap-4 text-on-surface-variant py-3 px-8 hover:bg-primary/5 hover:text-primary transition-all duration-200" href="#">
+<span class="material-symbols-outlined">assignment</span>
+<span class="font-body-md text-body-md">Quest Log</span>
+</a>
+<a class="flex items-center gap-4 text-on-surface-variant py-3 px-8 hover:bg-primary/5 hover:text-primary transition-all duration-200" href="#">
+<span class="material-symbols-outlined">science</span>
+<span class="font-body-md text-body-md">Alchemist</span>
+</a>
+<a class="flex items-center gap-4 text-on-surface-variant py-3 px-8 hover:bg-primary/5 hover:text-primary transition-all duration-200" href="#">
+<span class="material-symbols-outlined">storefront</span>
+<span class="font-body-md text-body-md">Void Market</span>
+</a>
+<a class="flex items-center gap-4 text-on-surface-variant py-3 px-8 hover:bg-primary/5 hover:text-primary transition-all duration-200" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span class="font-body-md text-body-md">Guild Hall</span>
+</a>
+<a class="flex items-center gap-4 text-on-surface-variant py-3 px-8 hover:bg-primary/5 hover:text-primary transition-all duration-200" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-body-md text-body-md">Chronicles</span>
+</a>
+</nav>
+</aside>
+<!-- BottomNavBar (Mobile) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-16 bg-surface-container/95 backdrop-blur-xl border-t border-secondary/30 px-4 pb-safe">
+<button class="flex flex-col items-center justify-center text-secondary border-t-2 border-secondary pt-2 h-full active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined">auto_awesome</span>
+<span class="font-label-sm text-label-sm">Sanctum</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 pt-2 h-full hover:bg-secondary/10 active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined">style</span>
+<span class="font-label-sm text-label-sm">Arsenal</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 pt-2 h-full hover:bg-secondary/10 active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined">hub</span>
+<span class="font-label-sm text-label-sm">Nexus</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant/60 pt-2 h-full hover:bg-secondary/10 active:scale-95 transition-transform duration-150">
+<span class="material-symbols-outlined">menu_book</span>
+<span class="font-label-sm text-label-sm">Archives</span>
+</button>
+</nav>
+<!-- Floating Action Button -->
+<button class="fixed bottom-24 right-6 md:right-12 w-14 h-14 bg-secondary text-surface rounded-none shadow-lg z-40 active:scale-90 transition-transform button-clipped flex items-center justify-center amber-glow-outline">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">add</span>
+</button>
+<script>
+        // Hover interaction for cards
+        document.querySelectorAll('.card-container').forEach(card => {
+            card.addEventListener('mousemove', e => {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                const rotateX = (y - centerY) / 10;
+                const rotateY = (centerX - x) / 10;
+
+                card.querySelector('.card-inner').style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-10px)`;
+            });
+
+            card.addEventListener('mouseleave', () => {
+                card.querySelector('.card-inner').style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0)`;
+            });
+        });
+    </script>
+</body></html>

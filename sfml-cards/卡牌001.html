@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="zh"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Shadow Deck - Deal Screen</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&amp;family=JetBrains+Mono:wght@500&amp;family=Hanken+Grotesk:wght@400&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-container-low": "#1b1c1a",
+                    "tertiary-fixed": "#ffddaf",
+                    "secondary": "#e9c349",
+                    "on-surface-variant": "#c3c8c0",
+                    "on-secondary-container": "#342800",
+                    "surface-container-lowest": "#0d0e0d",
+                    "primary-fixed": "#d0e9d2",
+                    "on-secondary": "#3c2f00",
+                    "tertiary-fixed-dim": "#ffba44",
+                    "background": "#121412",
+                    "surface": "#121412",
+                    "surface-container-highest": "#343533",
+                    "secondary-fixed": "#ffe088",
+                    "tertiary": "#ffba44",
+                    "primary": "#b5cdb7",
+                    "on-background": "#e3e2df",
+                    "inverse-on-surface": "#30312f",
+                    "surface-variant": "#343533",
+                    "on-secondary-fixed": "#241a00",
+                    "secondary-fixed-dim": "#e9c349",
+                    "on-error-container": "#ffdad6",
+                    "secondary-container": "#af8d11",
+                    "on-secondary-fixed-variant": "#574500",
+                    "surface-dim": "#121412",
+                    "primary-container": "#1a2e1f",
+                    "surface-tint": "#b5cdb7",
+                    "surface-container-high": "#292a28",
+                    "on-primary-fixed": "#0c2012",
+                    "on-primary": "#213525",
+                    "inverse-primary": "#4e6452",
+                    "on-tertiary-fixed-variant": "#614000",
+                    "on-tertiary-fixed": "#281800",
+                    "surface-bright": "#393938",
+                    "outline-variant": "#434843",
+                    "on-tertiary-container": "#c28500",
+                    "surface-container": "#1f201e",
+                    "primary-fixed-dim": "#b5cdb7",
+                    "on-tertiary": "#442c00",
+                    "on-error": "#690005",
+                    "inverse-surface": "#e3e2df",
+                    "error-container": "#93000a",
+                    "error": "#ffb4ab",
+                    "tertiary-container": "#3b2500",
+                    "outline": "#8d928b",
+                    "on-surface": "#e3e2df",
+                    "on-primary-container": "#809782",
+                    "on-primary-fixed-variant": "#374c3b"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "margin-mobile": "16px",
+                    "container-max": "1280px",
+                    "margin-desktop": "48px",
+                    "gutter": "16px",
+                    "unit": "4px"
+            },
+            "fontFamily": {
+                    "headline-sm": [
+                            "Cinzel"
+                    ],
+                    "headline-md": [
+                            "Cinzel"
+                    ],
+                    "headline-lg": [
+                            "Cinzel"
+                    ],
+                    "label-lg": [
+                            "JetBrains Mono"
+                    ],
+                    "body-lg": [
+                            "Hanken Grotesk"
+                    ],
+                    "label-sm": [
+                            "JetBrains Mono"
+                    ],
+                    "body-md": [
+                            "Hanken Grotesk"
+                    ]
+            },
+            "fontSize": {
+                    "headline-sm": [
+                            "24px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "headline-md": [
+                            "32px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "letterSpacing": "0.03em",
+                                    "fontWeight": "600"
+                            }
+                    ],
+                    "headline-lg": [
+                            "48px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "letterSpacing": "0.05em",
+                                    "fontWeight": "700"
+                            }
+                    ],
+                    "label-lg": [
+                            "14px",
+                            {
+                                    "lineHeight": "1.2",
+                                    "letterSpacing": "0.1em",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "body-lg": [
+                            "18px",
+                            {
+                                    "lineHeight": "1.6",
+                                    "fontWeight": "400"
+                            }
+                    ],
+                    "label-sm": [
+                            "12px",
+                            {
+                                    "lineHeight": "1.1",
+                                    "fontWeight": "500"
+                            }
+                    ],
+                    "body-md": [
+                            "16px",
+                            {
+                                    "lineHeight": "1.5",
+                                    "fontWeight": "400"
+                            }
+                    ]
+            }
+    },
+        },
+      }
+    </script>
+<style>
+        .geometric-bg {
+            background-image: 
+                linear-gradient(45deg, rgba(26, 46, 31, 0.9) 25%, transparent 25%), 
+                linear-gradient(-45deg, rgba(26, 46, 31, 0.9) 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, rgba(26, 46, 31, 0.9) 75%), 
+                linear-gradient(-45deg, transparent 75%, rgba(26, 46, 31, 0.9) 75%);
+            background-size: 40px 40px;
+            background-color: #0F1A12;
+        }
+
+        .mesh-texture {
+            background-image: repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(240, 165, 0, 0.05) 1px, rgba(240, 165, 0, 0.05) 2px),
+                              repeating-linear-gradient(90deg, transparent, transparent 1px, rgba(240, 165, 0, 0.05) 1px, rgba(240, 165, 0, 0.05) 2px);
+            background-size: 20px 20px;
+        }
+
+        .brutal-btn {
+            clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+        }
+
+        .playing-card {
+            transition: all 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+            transform-origin: bottom center;
+            opacity: 0;
+            transform: scale(0.5) translateY(200px);
+        }
+
+        .card-dealt {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+
+        .glowing-border {
+            box-shadow: inset 0 0 10px rgba(233, 195, 73, 0.3), 0 0 15px rgba(233, 195, 73, 0.2);
+        }
+
+        .particle {
+            position: absolute;
+            background: #D4AF37;
+            border-radius: 50%;
+            pointer-events: none;
+            animation: float 4s infinite linear;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0) scale(1); opacity: 0; }
+            50% { opacity: 0.8; }
+            100% { transform: translateY(-100px) scale(0); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="bg-background text-on-surface h-screen w-screen overflow-hidden geometric-bg relative flex flex-col justify-between">
+<!-- Top Navigation (TopAppBar) -->
+<header class="bg-surface-container-lowest dark:bg-surface-container-lowest flex justify-between items-center w-full px-6 h-16 border-b border-secondary-container bg-gradient-to-r from-surface-container-lowest via-primary-container to-surface-container-lowest shadow-[0_0_15px_rgba(233,195,73,0.3)] z-50 fixed top-0 full-width">
+<div class="flex items-center gap-8">
+<span class="font-headline-md text-headline-md font-bold text-secondary-fixed tracking-widest">神秘领域</span>
+<nav class="hidden md:flex gap-6">
+<a class="text-on-surface-variant hover:text-tertiary transition-colors duration-300 font-label-lg text-label-lg" href="#">万象更新</a>
+<a class="text-on-surface-variant hover:text-tertiary transition-colors duration-300 font-label-lg text-label-lg" href="#">圣殿</a>
+<a class="text-on-surface-variant hover:text-tertiary transition-colors duration-300 font-label-lg text-label-lg" href="#">星图</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="text-secondary dark:text-secondary-fixed hover:text-tertiary transition-colors duration-300">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">account_balance_wallet</span>
+</button>
+<button class="text-secondary dark:text-secondary-fixed hover:text-tertiary transition-colors duration-300">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-grow flex flex-col items-center justify-center relative mt-16 z-10 mesh-texture">
+<!-- Background Dust Particles Container -->
+<div class="absolute inset-0 pointer-events-none" id="particles-container"></div>
+<!-- Central Title -->
+<div class="text-center mb-12 z-20">
+<h1 class="font-headline-lg text-headline-lg text-secondary-fixed mb-4 tracking-widest drop-shadow-[0_0_10px_rgba(233,195,73,0.8)]">命运发牌</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant tracking-[0.2em]">准备博弈</p>
+</div>
+<!-- Deck / Dealer Area -->
+<div class="relative w-full max-w-4xl h-64 flex justify-center items-end mb-16 perspective-[1000px]">
+<!-- Central Deck (Click to Deal) -->
+<button class="absolute bottom-1/2 translate-y-1/2 w-48 h-16 brutal-btn bg-primary-container border border-secondary text-secondary font-headline-sm text-headline-sm flex items-center justify-center hover:bg-secondary hover:text-on-secondary transition-all duration-300 z-30 shadow-[0_0_20px_rgba(233,195,73,0.2)]" id="dealBtn">
+                发牌
+            </button>
+<!-- Cards Container -->
+<div class="flex justify-center -space-x-12 w-full absolute bottom-0 px-8" id="cards-row">
+<!-- Cards injected via JS -->
+</div>
+</div>
+</main>
+<!-- Bottom Navigation (BottomNavBar) - Visible only on mobile for demonstration -->
+<nav class="md:hidden fixed bottom-0 left-1/2 -translate-x-1/2 w-[90%] max-w-2xl mb-6 rounded-xl bg-surface-container-low/90 backdrop-blur-xl border border-secondary/40 shadow-[0_-5px_20px_rgba(233,195,73,0.2)] flex justify-around items-end w-full z-50 overflow-hidden">
+<button class="flex flex-col items-center justify-center text-on-surface-variant/70 p-3 hover:bg-secondary-container/10 scale-110 duration-200 w-1/4">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">swords</span>
+<span class="font-label-sm text-label-sm mt-1">混沌斩击</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant/70 p-3 hover:bg-secondary-container/10 scale-110 duration-200 w-1/4">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">shield</span>
+<span class="font-label-sm text-label-sm mt-1">虚空护盾</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant/70 p-3 hover:bg-secondary-container/10 scale-110 duration-200 w-1/4">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">auto_awesome</span>
+<span class="font-label-sm text-label-sm mt-1">星辰陨落</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant/70 p-3 hover:bg-secondary-container/10 scale-110 duration-200 w-1/4">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">bolt</span>
+<span class="font-label-sm text-label-sm mt-1">能量过载</span>
+</button>
+</nav>
+<script>
+        // Generate Particles
+        const container = document.getElementById('particles-container');
+        for (let i = 0; i < 30; i++) {
+            const particle = document.createElement('div');
+            particle.classList.add('particle');
+            particle.style.left = `${Math.random() * 100}%`;
+            particle.style.bottom = `${Math.random() * 100}%`;
+            particle.style.width = `${Math.random() * 4 + 1}px`;
+            particle.style.height = particle.style.width;
+            particle.style.animationDelay = `${Math.random() * 4}s`;
+            container.appendChild(particle);
+        }
+
+        // Deal Animation Logic
+        const dealBtn = document.getElementById('dealBtn');
+        const cardsRow = document.getElementById('cards-row');
+        const numCards = 17; // Initial Dou Dizhu hand
+        
+        // Pre-create cards
+        for(let i=0; i<numCards; i++) {
+            const card = document.createElement('div');
+            card.className = 'playing-card w-24 h-36 bg-[#0F1A12] border border-[#6B5B7B] rounded-sm relative glowing-border overflow-hidden shadow-xl transform rotate-y-180';
+            
+            // Card Back Design (Abstract Geometric/Circuit pattern)
+            card.innerHTML = `
+                <div class="absolute inset-0 bg-gradient-to-br from-[#1a2e1f] to-[#0F1A12]"></div>
+                <!-- Circuit lines representation -->
+                <svg class="absolute inset-0 w-full h-full opacity-30" viewBox="0 0 100 150">
+                    <path d="M10,10 L40,40 L40,80 L80,120 M90,20 L60,50 L20,50 L20,100" stroke="#F0A500" stroke-width="1" fill="none" />
+                    <circle cx="40" cy="80" r="2" fill="#F0A500"/>
+                    <circle cx="20" cy="100" r="2" fill="#F0A500"/>
+                </svg>
+                <!-- Inner glow border -->
+                <div class="absolute inset-1 border border-secondary/30 pointer-events-none"></div>
+            `;
+            cardsRow.appendChild(card);
+        }
+
+        dealBtn.addEventListener('click', () => {
+            // Hide button
+            dealBtn.style.opacity = '0';
+            dealBtn.style.pointerEvents = 'none';
+
+            const cards = document.querySelectorAll('.playing-card');
+            cards.forEach((card, index) => {
+                setTimeout(() => {
+                    card.classList.add('card-dealt');
+                    // Slight fan out effect
+                    const middle = Math.floor(numCards / 2);
+                    const offset = index - middle;
+                    const rotate = offset * 2; // slight rotation
+                    const translate = Math.abs(offset) * 2; // slight drop on edges
+                    
+                    card.style.transform = `scale(1) translateY(${translate}px) rotate(${rotate}deg)`;
+                    card.style.zIndex = index;
+                }, index * 80); // Staggered delay
+            });
+        });
+    </script>
+</body></html>

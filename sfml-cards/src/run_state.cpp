@@ -1,0 +1,86 @@
+#include "run_state.hpp"
+#include <algorithm>
+#include <random>
+
+RunState::RunState()
+{
+    std::random_device rd;
+    m_rng.seed(rd());
+}
+
+void RunState::startNewRun(int characterId)
+{
+    m_charId = characterId;
+    m_level = 1;
+    m_acquired.clear();
+    m_equipped = {-1, -1, -1};
+    m_mirroredSkills = {-1, -1, -1};
+    auto& ch = getAllCharacters()[characterId];
+    m_firstSwitchFree = ch.noFirstCool;
+}
+
+void RunState::advanceToNextLevel()
+{
+    m_mirroredSkills = m_equipped;
+    ++m_level;
+    auto& ch = getAllCharacters()[m_charId];
+    m_firstSwitchFree = ch.noFirstCool;
+}
+
+int RunState::extraCards() const
+{
+    return getAllCharacters()[m_charId].extraCards;
+}
+
+int RunState::extraEnergy() const
+{
+    return getAllCharacters()[m_charId].extraEnergy;
+}
+
+bool RunState::hasNoFirstCool() const
+{
+    return getAllCharacters()[m_charId].noFirstCool;
+}
+
+bool RunState::hasSkill(int id) const
+{
+    return std::find(m_acquired.begin(), m_acquired.end(), id) != m_acquired.end();
+}
+
+void RunState::addSkill(int id)
+{
+    if (!hasSkill(id))
+        m_acquired.push_back(id);
+}
+
+void RunState::equipSkill(int slotIdx, int skillId)
+{
+    if (slotIdx >= 0 && slotIdx < MAX_SKILL_SLOTS)
+        m_equipped[slotIdx] = skillId;
+}
+
+void RunState::unequipSlot(int slotIdx)
+{
+    if (slotIdx >= 0 && slotIdx < MAX_SKILL_SLOTS)
+        m_equipped[slotIdx] = -1;
+}
+
+int RunState::equippedCount() const
+{
+    int n = 0;
+    for (int id : m_equipped)
+        if (id >= 0) ++n;
+    return n;
+}
+
+std::vector<int> RunState::rollRewardSkills()
+{
+    // 从8个技能中随机选3个 (允许已拥有的技能出现, 由UI处理"已拥有"标记)
+    std::vector<int> pool;
+    for (int i = 0; i < SKILL_COUNT; ++i)
+        pool.push_back(i);
+
+    std::shuffle(pool.begin(), pool.end(), m_rng);
+    pool.resize(3);
+    return pool;
+}
