@@ -2,6 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 环境要求
+
+- **MinGW-w64** (GCC 14+) — 项目使用 MinGW Makefiles 生成器
+- **CMake** 3.16+
+- 设置环境变量 `MINGW_HOME` 指向 MinGW 安装目录，例如：
+  - MSYS2: `C:\msys64\mingw64`
+  - 独立安装: `D:\Software(English)\Mingw14.2.0\mingw64`
+  - 确保 `${MINGW_HOME}/bin` 在 PATH 中
+
 ## Build & Run
 
 ```bash
@@ -15,7 +24,8 @@ cmake --build build --config Debug
 ./build/main.exe
 ```
 
-In VS Code: `Ctrl+Shift+B` (cmake build) → `F5` (launch with gdb). The launch config at `.vscode/launch.json` uses `D:/software/Mingw14.2.0/mingw64/bin/gdb.exe`.
+In VS Code: `Ctrl+Shift+B` (cmake build) → `F5` (launch with gdb).
+所有 VS Code 配置文件（`.vscode/`）都通过 `${env:MINGW_HOME}` 引用 MinGW 路径，换电脑只需设置 `MINGW_HOME` 环境变量即可，无需修改任何配置文件。
 
 Build output goes to `build/main.exe`. CMake auto-copies `images/` and `resources/` post-build so the exe works from the build directory directly.
 

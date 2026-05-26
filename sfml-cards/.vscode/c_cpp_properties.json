@@ -5,14 +5,14 @@
             "includePath": [
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/SFML-3.0.2/include",
-                "D:/Software(English)/Mingw14.2.0/mingw64/include"
+                "${env:MINGW_HOME}/include"
             ],
             "defines": [
                 "_DEBUG",
                 "UNICODE",
                 "_UNICODE"
             ],
-            "compilerPath": "D:/Software(English)/Mingw14.2.0/mingw64/bin/g++.exe",
+            "compilerPath": "${env:MINGW_HOME}/bin/g++.exe",
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "windows-gcc-x64"

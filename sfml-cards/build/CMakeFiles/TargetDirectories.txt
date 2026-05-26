@@ -1,3 +1,0 @@
-D:/Code/vs_code/sfml-cards/build/CMakeFiles/main.dir
-D:/Code/vs_code/sfml-cards/build/CMakeFiles/edit_cache.dir
-D:/Code/vs_code/sfml-cards/build/CMakeFiles/rebuild_cache.dir

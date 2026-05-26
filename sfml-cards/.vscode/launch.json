@@ -12,7 +12,7 @@
             "environment": [],
             "externalConsole": false,
             "MIMode": "gdb",
-            "miDebuggerPath": "D:/Software(English)/Mingw14.2.0/mingw64/bin/gdb.exe",
+            "miDebuggerPath": "${env:MINGW_HOME}/bin/gdb.exe",
             "setupCommands": [
                 {
                     "description": "为 gdb 启用整齐打印",
