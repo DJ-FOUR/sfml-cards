@@ -29,6 +29,12 @@ In VS Code: `Ctrl+Shift+B` (cmake build) → `F5` (launch with gdb).
 
 Build output goes to `build/main.exe`. CMake auto-copies `images/` and `resources/` post-build so the exe works from the build directory directly.
 
+## Controls
+
+- `F11` — toggle fullscreen/windowed
+- `R` — redeal current level (development, gameplay only)
+- Dev buttons ("我赢"/"我输") — force win/lose, rendered top-left during gameplay
+
 ## Project
 
 **斗牌Rogue** — a C++17 + SFML 3.0.2 single-player card game combining Dou Di Zhu (斗地主) hand rules with roguelike endless-run progression. SFML is bundled locally in `SFML-3.0.2/` and statically linked.
@@ -55,6 +61,14 @@ main.cpp
   └── save.hpp/cpp        — 3-slot text-based save (legacy, not central to gameplay)
 ```
 
+### Card image mapping (`card.cpp`)
+
+`CARD_MAP[54]` maps `imageIndex` 0-53 → `(Suit, Rank)`:
+- 0-3: four 3s (Spade/Heart/Club/Diamond), 4-7: four 4s, ..., 44-47: four Aces, 48-51: four 2s
+- 52: Small Joker, 53: Big Joker
+
+Image files: `images/card/card{idx}.png`. `cardFromImageIndex()` does the lookup; `createDeck()` builds and shuffles all 54.
+
 ### Hand classification pipeline
 
 `GameState::classifyHand()` is the central rules function. It takes a vector of Cards + optional `SkillBuffs*` and returns `std::optional<HandPattern>`. The SkillBuffs struct carries temporary rule modifications (e.g., `straightExtended` reduces min straight length from 5 to 4). `GameState::beats()` compares two `PlayedCards` using the same buffs.
@@ -67,6 +81,15 @@ main.cpp
 ### Mirror mechanic
 
 The core roguelike hook: enemies inherit the player's 3 equipped skills from the previous level. `RunState::mirroredSkills()` returns `m_mirroredSkills` — a snapshot taken in `advanceToNextLevel()` right before the level increments. Level 1 enemies always get `{-1,-1,-1}` (no skills); level 2+ enemies get the snapshot. Enemy skills run on cooldown only — they don't consume energy.
+
+### Energy system
+
+- Start: `START_ENERGY=3`, max: `MAX_ENERGY=10`
+- +1 energy at start of each player turn (争锋者: +2). `GameState::startPlayerTurn()` handles this.
+- 争锋者 passive: `extraEnergy=1` adds to `energyPerTurn` via `setEnergyPerTurn(1 + run.extraEnergy())`
+- Enemy skills don't consume energy (cooldown-only)
+- Cooldowns tick down by 1 in `startPlayerTurn()`; enemy cooldowns tick in `enemyActivateSkills()`
+- Buffs clear at end of player turn (`endPlayerTurnCleanup()`)
 
 ### Game UI layout
 
@@ -103,6 +126,29 @@ The core roguelike hook: enemies inherit the player's 3 equipped skills from the
 - `std::optional` for nullable returns, `std::unique_ptr` for SFML objects
 - Platform-specific code uses `#ifdef _WIN32`
 - All comments and UI text in Chinese (中文)
+
+## Characters
+
+| ID | Name | Passive | Effect |
+|----|------|---------|--------|
+| 0 | 争锋者 | 强袭 | Energy per turn +1 (2/turn instead of 1) |
+| 1 | 谋略家 | 谋定 | First skill switch per level has no cooldown |
+| 2 | 掌控者 | 储备 | +2 hand size (17 cards instead of 15) |
+
+## Skills (SKILL_COUNT=8)
+
+| ID | Name | Effect | Cost | CD |
+|----|------|--------|------|----|
+| 0 | 炸弹强化 | Bombs rank +3, can beat same-rank bombs | 2 | 2 |
+| 1 | 火箭冲刺 | Draw 3 cards when playing Rocket | 1 | 3 |
+| 2 | 顺子延长 | Min straight length 4 (down from 5) | 3 | 3 |
+| 3 | 连对增幅 | Min consecutive pairs 2 (down from 3) | 2 | 3 |
+| 4 | 三带一强化 | Triple+one/two can carry 1 extra kicker | 2 | 1 |
+| 5 | 飞机连射 | Min airplane groups 1 (down from 2) | 3 | 3 |
+| 6 | 炸弹馈赠 | +2 energy when playing a bomb | 1 | 2 |
+| 7 | 连环炸弹 | Auto-play a bomb after playing (1/turn) | 4 | 4 |
+
+Buff-type skills (0/2/3/4/5) set `SkillBuffs` fields cleared at turn end. Trigger-type (1/6/7) set flags consumed on activation; enemy implementation of trigger skills is limited.
 
 ## Key constants
 
