@@ -89,14 +89,11 @@ private:
     std::unique_ptr<sf::Text> m_playBtnText;
     std::unique_ptr<sf::Text> m_passBtnText;
     std::unique_ptr<sf::Text> m_returnBtnText;
-    std::unique_ptr<sf::Text> m_energyText;
     std::unique_ptr<sf::Text> m_skillBtnTexts[MAX_SKILL_SLOTS];
 
     sf::RectangleShape m_playBtn;
     sf::RectangleShape m_passBtn;
     sf::RectangleShape m_returnBtn;
-    sf::RectangleShape m_energyBarBg;
-    sf::RectangleShape m_energyBarFill;
     sf::RectangleShape m_skillBtns[MAX_SKILL_SLOTS];
 
     // ---- 动态布局 ----
@@ -164,6 +161,7 @@ private:
     std::vector<CardDealAnim> m_dealAnim;
     bool m_dealActive = false;
     float m_dealTimer = 0.f;
+    float m_shakeTimer = 0.f;
 
     static constexpr float DEAL_STAGGER   = 0.08f;
     static constexpr float DEAL_DURATION  = 0.60f;

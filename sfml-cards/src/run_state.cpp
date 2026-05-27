@@ -15,31 +15,17 @@ void RunState::startNewRun(int characterId)
     m_acquired.clear();
     m_equipped = {-1, -1, -1};
     m_mirroredSkills = {-1, -1, -1};
-    auto& ch = getAllCharacters()[characterId];
-    m_firstSwitchFree = ch.noFirstCool;
 }
 
 void RunState::advanceToNextLevel()
 {
     m_mirroredSkills = m_equipped;
     ++m_level;
-    auto& ch = getAllCharacters()[m_charId];
-    m_firstSwitchFree = ch.noFirstCool;
 }
 
 int RunState::extraCards() const
 {
     return getAllCharacters()[m_charId].extraCards;
-}
-
-int RunState::extraEnergy() const
-{
-    return getAllCharacters()[m_charId].extraEnergy;
-}
-
-bool RunState::hasNoFirstCool() const
-{
-    return getAllCharacters()[m_charId].noFirstCool;
 }
 
 bool RunState::hasSkill(int id) const

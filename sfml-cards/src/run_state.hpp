@@ -17,8 +17,6 @@ public:
     int  currentLevel()    const { return m_level; }
     int  currentCharId()   const { return m_charId; }
     int  extraCards()      const;
-    int  extraEnergy()     const;
-    bool hasNoFirstCool()  const;
 
     // 已获得的所有技能 (永久技能池)
     const std::vector<int>& acquiredSkills() const { return m_acquired; }
@@ -37,10 +35,6 @@ public:
     // 随机获取3个可选技能 (用于奖励界面)
     std::vector<int> rollRewardSkills();
 
-    // 谋略家: 每关首次切换技能无冷却
-    bool firstSwitchFree() const { return m_firstSwitchFree; }
-    void consumeFirstSwitchFree() { m_firstSwitchFree = false; }
-
 private:
     int  m_level = 1;
     int  m_charId = 0;
@@ -48,8 +42,6 @@ private:
     std::vector<int>          m_acquired;   // 已获得技能id列表
     std::array<int, MAX_SKILL_SLOTS> m_equipped = {-1, -1, -1};
     std::array<int, MAX_SKILL_SLOTS> m_mirroredSkills = {-1, -1, -1};
-
-    bool m_firstSwitchFree = false;
 
     std::mt19937 m_rng;
 };

@@ -2,6 +2,7 @@
 
 #include "card.hpp"
 #include "skill.hpp"
+#include "ai_memory.hpp"
 #include <vector>
 #include <optional>
 #include <array>
@@ -70,24 +71,14 @@ public:
     static bool beats(const PlayedCards& play, const PlayedCards& lastPlay,
                       const SkillBuffs* buffs = nullptr);
 
-    // ------- 技能 / 能量 -------
-    int  playerEnergy()   const { return m_playerEnergy; }
-    int  energyPerTurn()  const { return m_energyPerTurn; }
-    void setEnergyPerTurn(int e) { m_energyPerTurn = e; }
-
-    const std::array<int, MAX_SKILL_SLOTS>& playerCooldowns() const { return m_playerCooldowns; }
+    // ------- 技能 -------
     const SkillBuffs& playerBuffs() const { return m_playerBuffs; }
 
     // 玩家激活技能, 返回是否成功
-    bool activatePlayerSkill(int skillId, int slotIdx);
+    bool activatePlayerSkill(int skillId);
 
-    // 玩家回合开始 (回能, 冷却-1)
-    void startPlayerTurn();
     // 回合结束清理 (清除buff)
     void endPlayerTurnCleanup();
-
-    // 获得能量
-    void gainEnergy(int amount);
 
     // 抽牌
     int  drawPileSize() const { return (int)m_drawPile.size(); }
@@ -95,13 +86,14 @@ public:
 
     // 敌人技能信息 (渲染用)
     const std::array<int, MAX_SKILL_SLOTS>& enemySkillSlots() const { return m_enemySkills; }
-    const std::array<int, MAX_SKILL_SLOTS>& enemyCooldowns() const { return m_enemyCooldowns; }
     const SkillBuffs& enemyBuffs() const { return m_enemyBuffs; }
 
     // 触发技能标志 (渲染用)
     bool s02Active() const { return m_s02_active; }
-    bool s07Active() const { return m_s07_active; }
     bool s08Active() const { return m_s08_active; }
+
+    // AI 学习记忆 (由 main.cpp 管理生命周期)
+    void setAIMemory(AIMemory* mem) { m_aiMemory = mem; }
 
     // 开发者调试
     void forceWin()  { m_phase = Phase::PlayerWins; }
@@ -120,22 +112,17 @@ private:
 
     Phase m_phase = Phase::PlayerTurn;
 
-    // 能量与技能
-    int  m_playerEnergy = START_ENERGY;
-    int  m_energyPerTurn = 1;
-    std::array<int, MAX_SKILL_SLOTS> m_playerCooldowns = {0, 0, 0};
+    // 技能
     SkillBuffs m_playerBuffs;
-    bool m_playerPlayedThisTurn = false; // for 争锋者 extra energy
     bool m_chainBombUsed = false;        // S08 每回合限1次
 
     // 触发技能标记
     bool m_s02_active = false;  // 火箭冲刺: 打出火箭时抽3张
-    bool m_s07_active = false;  // 炸弹馈赠: 打出炸弹回复2能量
+    bool m_s07_active = false;  // 炸弹馈赠: 打出炸弹抽1张
     bool m_s08_active = false;  // 连环炸弹: 出牌后自动出炸弹
 
     // 敌人技能
     std::array<int, MAX_SKILL_SLOTS> m_enemySkills = {-1, -1, -1};
-    std::array<int, MAX_SKILL_SLOTS> m_enemyCooldowns = {0, 0, 0};
     SkillBuffs m_enemyBuffs;
 
     void startNewRound();
@@ -160,4 +147,6 @@ private:
     std::vector<int> findBombInHand() const;
     // 敌人回合开始激活技能
     void enemyActivateSkills();
+
+    AIMemory* m_aiMemory = nullptr;
 };
