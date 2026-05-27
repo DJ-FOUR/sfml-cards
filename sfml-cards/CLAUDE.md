@@ -45,7 +45,7 @@ Full architecture docs: [AGENTS.md](AGENTS.md) | Gameplay rules: [GAMEPLAY.md](G
 
 ### Screen state machine (`main.cpp`)
 
-`Screen` enum drives the game loop: `MainMenu → CharacterSelect → Reward(初始技能) → Transition → Game → Reward → GameOver`. After character select, the player picks an initial skill (3 random choices), then goes to Transition to equip before the first battle. Each screen has corresponding `draw*`/`hit*` method pairs in the Renderer. State transitions happen in the event handling block of `main.cpp:95-288`.
+`Screen` enum drives the game loop: `MainMenu → CharacterSelect → Reward(初始技能) → Transition → Game → Reward → GameOver`. Main menu has "开始游戏" (→ CharacterSelect) and "退出". After character select, the player picks an initial skill (3 random choices), then goes to Transition to equip before the first battle. Each screen has corresponding `draw*`/`hit*` method pairs in the Renderer. State transitions happen in the event handling block of `main.cpp:95-288`.
 
 ### Module dependency graph
 
@@ -54,7 +54,8 @@ main.cpp
   ├── renderer.hpp/cpp    — All SFML drawing + hit-testing (every screen)
   ├── game_state.hpp/cpp  — Core rules engine: hand classification, comparison, AI, skill activation
   │     ├── card.hpp/cpp  — Card data model, deck creation, image index mapping
-  │     └── skill.hpp/cpp — Skill definitions (8 skills) + SkillBuffs struct
+  │     ├── skill.hpp/cpp — Skill definitions (8 skills) + SkillBuffs struct
+  │     └── ai_memory.hpp/cpp — k-NN learning: records player decisions, guides AI mimicry
   ├── run_state.hpp/cpp   — Run-level state: level #, acquired skills, equipped slots, mirroring
   │     ├── character.hpp/cpp — 3 character definitions with passive abilities
   │     └── skill.hpp/cpp
@@ -80,42 +81,68 @@ Image files: `images/card/card{idx}.png`. `cardFromImageIndex()` does the lookup
 
 ### Mirror mechanic
 
-The core roguelike hook: enemies inherit the player's 3 equipped skills from the previous level. `RunState::mirroredSkills()` returns `m_mirroredSkills` — a snapshot taken in `advanceToNextLevel()` right before the level increments. Level 1 enemies always get `{-1,-1,-1}` (no skills); level 2+ enemies get the snapshot. Enemy skills run on cooldown only — they don't consume energy.
+The core roguelike hook: enemies inherit the player's 3 equipped skills from the previous level. `RunState::mirroredSkills()` returns `m_mirroredSkills` — a snapshot taken in `advanceToNextLevel()` right before the level increments. Level 1 enemies always get `{-1,-1,-1}` (no skills); level 2+ enemies get the snapshot.
 
-### Energy system
+### Skill system
 
-- Start: `START_ENERGY=3`, max: `MAX_ENERGY=10`
-- +1 energy at start of each player turn (争锋者: +2). `GameState::startPlayerTurn()` handles this.
-- 争锋者 passive: `extraEnergy=1` adds to `energyPerTurn` via `setEnergyPerTurn(1 + run.extraEnergy())`
-- Enemy skills don't consume energy (cooldown-only)
-- Cooldowns tick down by 1 in `startPlayerTurn()`; enemy cooldowns tick in `enemyActivateSkills()`
-- Buffs clear at end of player turn (`endPlayerTurnCleanup()`)
+- Skills have **no energy cost and no cooldown**. Players can activate any equipped skill freely during their turn.
+- **Buff-type** skills (0/2/3/4/5): set `SkillBuffs` fields, cleared at end of player turn (`endPlayerTurnCleanup()`).
+- **Trigger-type** skills (1/6/7): set flags (`m_s02_active`, `m_s07_active`, `m_s08_active`), consumed on activation during `applyPostPlayEffects()`. S08 limited to 1/turn via `m_chainBombUsed`.
+- S07 (炸弹馈赠): changed from "+2 energy" to "draw 1 card when playing a bomb" (energy system removed).
+- Enemy skills: no cost or cooldown. `enemyActivateSkills()` decides activation per-skill based on AI learning probabilities.
+
+### AI learning system (`ai_memory.hpp/cpp`)
+
+Two-component online learning within a single run:
+
+**Card play learning (k-NN)**:
+- Records every player decision as `(PlayFeatures, PlayAction)` pair, up to 2000 records.
+- `PlayFeatures` (7-dim): hand size bucket, is new round, last play type/rank, has bomb, has rocket, level number.
+- `PlayAction`: hand type, main rank, card count, passed flag.
+- AI queries: finds K=5 nearest neighbors via weighted feature distance, returns similarity-weighted action distribution.
+- Used in `computerTakeTurn()` to re-rank legal options — actions the player favored get score bonuses.
+
+**Skill usage learning**:
+- Tracks `skillId → use count` in `m_skillUses` map.
+- Records on `activatePlayerSkill()` → `recordSkillUse(skillId)`.
+- AI queries `querySkillProb(skillId)` = uses/maxUses ratio (0.0 if never used).
+- `enemyActivateSkills()` activates buffs only when probability ≥ 0.4.
+
+**Lifecycle**: `AIMemory` owned by `main.cpp`, cleared on run start (character select), game over, and return to menu. Persists across levels within a run — data accumulates.
+
+**Recording hook points**:
+- `playerPlay()`: records (pre-removal hand state, chosen cards) before modifying game state.
+- `playerPass()`: records (pre-pass hand state, pass action).
+- `activatePlayerSkill()`: records skill use.
+
+### AI decision flow (`GameState::computerTakeTurn()`)
+
+1. Enemy activates skills (probabilistic, based on player's usage history).
+2. If following (not a new round): `findBeatingPlays()` generates all legal beating plays.
+3. Selection: cost-based heuristic (`evaluatePlayCost`: breaking bomb +50, triple +15, pair +3) combined with k-NN memory preference re-ranking.
+4. Bombs/rockets: skipped when hand > 4 cards; prioritized when ≤ 4.
+5. If no beating play: pass, clear buffs, switch to PlayerTurn.
+6. If new round: `findLowestPlay()` tries multi-card combos first (straight → triple+two → triple+one → triple → pair → single).
 
 ### Game UI layout
 
 - Enemy hand cards: top of screen (`computerHandY = h*0.05`)
-- Enemy skills: top, card-proportioned rectangles
+- Enemy skills: top, card-proportioned rectangles (dark red, shows BUFF/TRIG label)
 - Played cards: center area (enemy above, player below)
 - "出牌"/"不出" buttons: centered above player hand cards (`h*0.56`), only visible during PlayerTurn
-- Player hand cards: bottom (`handCardY = h*0.66`)
-- Player skills: bottom-left corner (`w*0.03`, `h*0.83`), card-proportioned (CARD_W/CARD_H ratio)
-- Energy bar: bottom-center
+- Player hand cards: bottom (`handCardY = h*0.66`), upright (no fan rotation/arc), straight line layout
+- Player skills: bottom-left corner (`w*0.03`, `h*0.83`), card-proportioned (CARD_W/CARD_H ratio), shows BUFF/TRIG label
 - Dev debug buttons ("我赢"/"我输"): top-left area, only during active gameplay
+- "开始战斗" button (Transition screen): rectangular (`w*0.18 × h*0.09`), green default / magenta hover, text shakes violently on hover
 
 ### Hover effects
 
-- Hand cards: smooth float-up animation (`h*0.05` lift) on hover, golden glow border on selected
-- Play/Pass buttons: scale to 110% on hover (smooth lerp animation)
+- Hand cards: smooth float-up animation (`h*0.025f` lift) on hover, golden glow border on selected
+- Play/Pass buttons: scale to 108% on hover (smooth lerp animation)
 - Character select cards: float + scale + 3D perspective tilt
 - Reward skill cards: float + scale + glow border
+- Fight button (Transition): magenta outline + hazard stripes + text shake (6-frequency sine wave叠加)
 - All animations use `HoverAnimState` struct with lerp-based smoothing (`SPEED = 14.0f`)
-
-### AI decision flow (`GameState::computerTakeTurn()`)
-
-1. If following (not a new round): call `findBeatingPlays()` to find the smallest legal play that beats `m_lastPlay`
-2. If no beating play found: pass
-3. If new round (free play): call `findLowestPlay()` which plays the smallest single card
-4. Bomb/Rocket only considered when hand ≤ 4 cards
 
 ## Code conventions
 
@@ -131,24 +158,27 @@ The core roguelike hook: enemies inherit the player's 3 equipped skills from the
 
 | ID | Name | Passive | Effect |
 |----|------|---------|--------|
-| 0 | 争锋者 | 强袭 | Energy per turn +1 (2/turn instead of 1) |
-| 1 | 谋略家 | 谋定 | First skill switch per level has no cooldown |
+| 0 | 争锋者 | 强袭 | +1 hand size (16 cards instead of 15) |
+| 1 | 谋略家 | 谋定 | Standard hand size (15 cards) |
 | 2 | 掌控者 | 储备 | +2 hand size (17 cards instead of 15) |
+
+CharacterDef struct: `{id, name, passiveName, passiveDesc, extraCards}`.
 
 ## Skills (SKILL_COUNT=8)
 
-| ID | Name | Effect | Cost | CD |
-|----|------|--------|------|----|
-| 0 | 炸弹强化 | Bombs rank +3, can beat same-rank bombs | 2 | 2 |
-| 1 | 火箭冲刺 | Draw 3 cards when playing Rocket | 1 | 3 |
-| 2 | 顺子延长 | Min straight length 4 (down from 5) | 3 | 3 |
-| 3 | 连对增幅 | Min consecutive pairs 2 (down from 3) | 2 | 3 |
-| 4 | 三带一强化 | Triple+one/two can carry 1 extra kicker | 2 | 1 |
-| 5 | 飞机连射 | Min airplane groups 1 (down from 2) | 3 | 3 |
-| 6 | 炸弹馈赠 | +2 energy when playing a bomb | 1 | 2 |
-| 7 | 连环炸弹 | Auto-play a bomb after playing (1/turn) | 4 | 4 |
+| ID | Name | Effect | Type |
+|----|------|--------|------|
+| 0 | 炸弹强化 | Bombs rank +3, can beat same-rank bombs | BUFF |
+| 1 | 火箭冲刺 | Draw 3 cards when playing Rocket | TRIGGER |
+| 2 | 顺子延长 | Min straight length 4 (down from 5) | BUFF |
+| 3 | 连对增幅 | Min consecutive pairs 2 (down from 3) | BUFF |
+| 4 | 三带一强化 | Triple+one/two can carry 1 extra kicker | BUFF |
+| 5 | 飞机连射 | Min airplane groups 1 (down from 2) | BUFF |
+| 6 | 炸弹馈赠 | Draw 1 card when playing a bomb | TRIGGER |
+| 7 | 连环炸弹 | Auto-play a bomb after playing (1/turn) | TRIGGER |
 
-Buff-type skills (0/2/3/4/5) set `SkillBuffs` fields cleared at turn end. Trigger-type (1/6/7) set flags consumed on activation; enemy implementation of trigger skills is limited.
+SkillDef struct: `{id, name, desc}`. No energy cost or cooldown fields.
+Buff-type skills (0/2/3/4/5) set `SkillBuffs` fields cleared at turn end. Trigger-type (1/6/7) set flags consumed on activation.
 
 ## Key constants
 
@@ -158,12 +188,10 @@ Buff-type skills (0/2/3/4/5) set `SkillBuffs` fields cleared at turn end. Trigge
 | `STANDARD_DEAL` | 15 | game_state.cpp |
 | `SKILL_COUNT` | 8 | skill.hpp |
 | `MAX_SKILL_SLOTS` | 3 | skill.hpp |
-| `MAX_ENERGY` | 10 | skill.hpp |
-| `START_ENERGY` | 3 | skill.hpp |
 | `CHAR_COUNT` | 3 | character.hpp |
 | `DEFAULT_W × DEFAULT_H` | 1200×750 | renderer.hpp |
 | `CARD_W × CARD_H` | 105×150 | renderer.hpp |
 
 ## Testing
 
-No automated test framework. Validation is manual: build → run → exercise each screen, hand type, skill activation, and the mirror mechanic across multiple levels.
+No automated test framework. Validation is manual: build → run → exercise each screen, hand type, skill activation, mirror mechanic, and AI learning across multiple levels.

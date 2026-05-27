@@ -231,13 +231,8 @@ void GameState::dealCards(int extraCards)
     m_computerDisplayed.clear();
     m_phase = Phase::PlayerTurn;
 
-    m_playerEnergy = START_ENERGY;
-    m_energyPerTurn = 1;
-    m_playerCooldowns = {0, 0, 0};
     m_playerBuffs.clear();
-    m_playerPlayedThisTurn = false;
     m_chainBombUsed = false;
-    m_enemyCooldowns = {0, 0, 0};
     m_enemyBuffs.clear();
     m_s02_active = false;
     m_s07_active = false;
@@ -247,7 +242,6 @@ void GameState::dealCards(int extraCards)
 void GameState::setEnemySkills(const std::array<int, MAX_SKILL_SLOTS>& skills)
 {
     m_enemySkills = skills;
-    m_enemyCooldowns = {0, 0, 0};
     m_enemyBuffs.clear();
 }
 
@@ -291,12 +285,43 @@ bool GameState::playerPlay(const std::vector<int>& handIndices)
     if (m_lastPlay && !beats(play, *m_lastPlay, &m_playerBuffs))
         return false;
 
+    // 在修改状态前捕获特征 (用于AI学习)
+    bool wasNewRound = !m_lastPlay.has_value();
+    int handSizeBefore = (int)m_playerHand.size();
+
     removeIndices(m_playerHand, handIndices);
     m_playerDisplayed = std::move(cards);
     m_computerDisplayed.clear();
     m_lastPlay = play;
     m_lastPlayer = 0;
-    m_playerPlayedThisTurn = true;
+
+    if (m_aiMemory) {
+        PlayFeatures feat;
+        feat.handSize   = handSizeBefore;
+        feat.isNewRound = wasNewRound;
+        feat.level      = 1;
+        feat.lastPlayType = -1;
+        feat.lastPlayRank = -1;
+
+        std::array<int, 15> freq{};
+        // 使用出牌前的手牌状态检查炸弹/火箭
+        for (auto& c : m_playerHand)
+            freq[doudizhuOrder(c.rank)]++;
+        for (auto& c : cards)
+            freq[doudizhuOrder(c.rank)]++;
+        feat.hasBomb = false;
+        for (int r = 0; r < 13; ++r)
+            if (freq[r] >= 4) { feat.hasBomb = true; break; }
+        feat.hasRocket = (freq[13] >= 1 && freq[14] >= 1);
+
+        PlayAction act;
+        act.handType  = (int)pattern->type;
+        act.mainRank  = pattern->mainRank;
+        act.cardCount = (int)cards.size();
+        act.passed    = false;
+
+        m_aiMemory->recordPlay(feat, act);
+    }
 
     applyPostPlayEffects();
 
@@ -314,9 +339,38 @@ void GameState::playerPass()
     if (m_phase != Phase::PlayerTurn) return;
     if (!m_lastPlay) return;
 
+    // 在修改状态前捕获特征
+    int handSizeBefore = (int)m_playerHand.size();
+
     startNewRound();
     m_playerDisplayed.clear();
     m_computerDisplayed.clear();
+
+    if (m_aiMemory) {
+        PlayFeatures feat;
+        feat.handSize   = handSizeBefore;
+        feat.isNewRound = false;
+        feat.level      = 1;
+        feat.lastPlayType = m_lastPlay ? (int)m_lastPlay->pattern.type : -1;
+        feat.lastPlayRank = m_lastPlay ? m_lastPlay->pattern.mainRank : -1;
+
+        std::array<int, 15> freq{};
+        for (auto& c : m_playerHand)
+            freq[doudizhuOrder(c.rank)]++;
+        feat.hasBomb = false;
+        for (int r = 0; r < 13; ++r)
+            if (freq[r] >= 4) { feat.hasBomb = true; break; }
+        feat.hasRocket = (freq[13] >= 1 && freq[14] >= 1);
+
+        PlayAction act;
+        act.passed    = true;
+        act.handType  = -2;
+        act.mainRank  = -1;
+        act.cardCount = 0;
+
+        m_aiMemory->recordPlay(feat, act);
+    }
+
     endPlayerTurnCleanup();
     m_phase = Phase::ComputerTurn;
 }
@@ -336,13 +390,6 @@ bool GameState::canPlay(const std::vector<int>& handIndices) const
 }
 
 // ----- 技能系统 -----
-
-void GameState::gainEnergy(int amount)
-{
-    m_playerEnergy += amount;
-    if (m_playerEnergy > MAX_ENERGY) m_playerEnergy = MAX_ENERGY;
-    if (m_playerEnergy < 0) m_playerEnergy = 0;
-}
 
 void GameState::drawCards(int count)
 {
@@ -385,9 +432,9 @@ void GameState::applyPostPlayEffects()
         m_s02_active = false;
     }
 
-    // S07: 炸弹馈赠 - 打出炸弹回复2点能量
+    // S07: 炸弹馈赠 - 打出炸弹抽1张牌
     if (m_s07_active && pattern->type == HandType::Bomb) {
-        gainEnergy(2);
+        drawCards(1);
         m_s07_active = false;
     }
 
@@ -407,7 +454,7 @@ void GameState::applyPostPlayEffects()
                 m_lastPlayer = 0;
 
                 if (m_s07_active) {
-                    gainEnergy(2);
+                    drawCards(1);
                     m_s07_active = false;
                 }
 
@@ -419,40 +466,19 @@ void GameState::applyPostPlayEffects()
     }
 }
 
-void GameState::startPlayerTurn()
-{
-    for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
-        if (m_playerCooldowns[i] > 0)
-            --m_playerCooldowns[i];
-
-    m_playerEnergy += m_energyPerTurn;
-    if (m_playerEnergy > MAX_ENERGY) m_playerEnergy = MAX_ENERGY;
-}
-
 void GameState::endPlayerTurnCleanup()
 {
     m_playerBuffs.clear();
-    m_playerPlayedThisTurn = false;
     m_chainBombUsed = false;
     m_s02_active = false;
     m_s07_active = false;
     m_s08_active = false;
 }
 
-bool GameState::activatePlayerSkill(int skillId, int slotIdx)
+bool GameState::activatePlayerSkill(int skillId)
 {
     if (m_phase != Phase::PlayerTurn) return false;
-    if (slotIdx < 0 || slotIdx >= MAX_SKILL_SLOTS) return false;
-    if (m_playerCooldowns[slotIdx] > 0) return false;
-
-    auto& skills = getAllSkills();
     if (skillId < 0 || skillId >= SKILL_COUNT) return false;
-    auto& sk = skills[skillId];
-
-    if (m_playerEnergy < sk.energyCost) return false;
-
-    m_playerEnergy -= sk.energyCost;
-    m_playerCooldowns[slotIdx] = sk.cooldown;
 
     switch (skillId) {
     case 0: m_playerBuffs.bombBoosted = true;      break;
@@ -465,6 +491,9 @@ bool GameState::activatePlayerSkill(int skillId, int slotIdx)
     case 7: m_s08_active = true;                   break;
     }
 
+    if (m_aiMemory)
+        m_aiMemory->recordSkillUse(skillId);
+
     return true;
 }
 
@@ -474,39 +503,143 @@ void GameState::enemyActivateSkills()
 {
     if (m_phase != Phase::ComputerTurn) return;
 
-    auto& skills = getAllSkills();
-
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         int sid = m_enemySkills[i];
         if (sid < 0) continue;
-        if (m_enemyCooldowns[i] > 0) continue;
 
-        auto& sk = skills[sid];
-        m_enemyCooldowns[i] = sk.cooldown;
+        // 查询AI记忆: 玩家使用这个技能的概率
+        float prob = 0.0f;
+        if (m_aiMemory)
+            prob = m_aiMemory->querySkillProb(sid);
 
-        // 根据技能id设置敌人buff
-        switch (sid) {
-        case 0: m_enemyBuffs.bombBoosted = true;      break;
-        case 2: m_enemyBuffs.straightExtended = true;  break;
-        case 3: m_enemyBuffs.pairsExtended = true;     break;
-        case 4: m_enemyBuffs.tripleExtraKicker = true; break;
-        case 5: m_enemyBuffs.airplaneExtended = true;  break;
-        // S01, S06, S07 是触发型, 在computerTakeTurn中处理
-        default: break;
+        if (prob >= 0.4f) {
+            switch (sid) {
+            case 0: m_enemyBuffs.bombBoosted = true;      break;
+            case 2: m_enemyBuffs.straightExtended = true;  break;
+            case 3: m_enemyBuffs.pairsExtended = true;     break;
+            case 4: m_enemyBuffs.tripleExtraKicker = true; break;
+            case 5: m_enemyBuffs.airplaneExtended = true;  break;
+            default: break;
+            }
         }
     }
 }
 
 // ----- Computer AI -----
 
+// 评估出牌代价: 拆炸弹/三条/对子的惩罚越高越不应选
+static int evaluatePlayCost(const std::vector<int>& indices,
+                            const std::vector<Card>& hand)
+{
+    std::array<int, DZ_RANKS> freq{};
+    for (auto& c : hand)
+        freq[doudizhuOrder(c.rank)]++;
+
+    int cost = 0;
+    for (int idx : indices) {
+        int r = doudizhuOrder(hand[idx].rank);
+        if (freq[r] >= 4)      cost += 50;   // 拆炸弹
+        else if (freq[r] >= 3) cost += 15;   // 拆三条
+        else if (freq[r] >= 2) cost += 3;    // 拆对子
+    }
+    return cost;
+}
+
 GameState::PlayOption GameState::findLowestPlay(const std::vector<Card>& hand) const
 {
-    int last = (int)hand.size() - 1;
-    PlayOption opt;
-    opt.handIndices = {last};
-    opt.pattern = HandPattern{HandType::Single,
-                              doudizhuOrder(hand[last].rank), 0, 0};
-    return opt;
+    int n = (int)hand.size();
+    std::array<int, DZ_RANKS> freq{};
+    for (auto& c : hand)
+        freq[doudizhuOrder(c.rank)]++;
+
+    // 辅助: 从手牌中找指定rank的count张牌
+    auto findN = [&](int r, int count, std::vector<bool>& used) {
+        std::vector<int> idx;
+        for (int i = 0; i < n && (int)idx.size() < count; ++i)
+            if (!used[i] && doudizhuOrder(hand[i].rank) == r) {
+                idx.push_back(i);
+                used[i] = true;
+            }
+        return idx;
+    };
+
+    auto findAnySingle = [&](const std::vector<bool>& used) -> int {
+        for (int i = n - 1; i >= 0; --i)
+            if (!used[i]) return i;
+        return -1;
+    };
+
+    // 1. 顺子 — 优先最长、最低rank的
+    for (int len = std::min(n, 12); len >= 5; --len) {
+        for (int top = RA; top >= R3 + len - 1; --top) {
+            int bottom = top - len + 1;
+            std::vector<int> indices;
+            std::vector<bool> used(n);
+            bool ok = true;
+            for (int r = bottom; r <= top; ++r) {
+                int ix = findCardOfRank(hand, r, used);
+                if (ix < 0) { ok = false; break; }
+                indices.push_back(ix);
+                used[ix] = true;
+            }
+            if (ok) {
+                std::sort(indices.begin(), indices.end());
+                return {HandPattern{HandType::Straight, top, len, 0}, indices};
+            }
+        }
+    }
+
+    // 2. 三带二 — 最低三条 + 最低对子
+    for (int r = R3; r <= R2; ++r) {
+        if (freq[r] < 3) continue;
+        for (int kr = R3; kr <= R2; ++kr) {
+            if (kr == r || freq[kr] < 2) continue;
+            std::vector<bool> used(n);
+            auto triple = findN(r, 3, used);
+            auto pair   = findN(kr, 2, used);
+            triple.insert(triple.end(), pair.begin(), pair.end());
+            std::sort(triple.begin(), triple.end());
+            return {HandPattern{HandType::TriplePlusTwo, r, 0, 2}, triple};
+        }
+    }
+
+    // 3. 三带一 — 最低三条 + 最低单牌
+    for (int r = R3; r <= R2; ++r) {
+        if (freq[r] < 3) continue;
+        std::vector<bool> used(n);
+        auto triple = findN(r, 3, used);
+        int kicker = findAnySingle(used);
+        if (kicker >= 0) {
+            triple.push_back(kicker);
+            std::sort(triple.begin(), triple.end());
+            return {HandPattern{HandType::TriplePlusOne, r, 0, 1}, triple};
+        }
+    }
+
+    // 4. 三条
+    for (int r = R3; r <= R2; ++r) {
+        if (freq[r] >= 3) {
+            std::vector<bool> used(n);
+            auto triple = findN(r, 3, used);
+            std::sort(triple.begin(), triple.end());
+            return {HandPattern{HandType::Triple, r, 0, 0}, triple};
+        }
+    }
+
+    // 5. 对子 — 最低的
+    for (int r = R3; r <= R2; ++r) {
+        if (freq[r] >= 2) {
+            std::vector<bool> used(n);
+            auto pair = findN(r, 2, used);
+            std::sort(pair.begin(), pair.end());
+            return {HandPattern{HandType::Pair, r, 0, 0}, pair};
+        }
+    }
+
+    // 兜底: 最低单牌
+    int last = n - 1;
+    return {{HandPattern{HandType::Single,
+                         doudizhuOrder(hand[last].rank), 0, 0}}, {last}};
 }
 
 std::vector<GameState::PlayOption> GameState::findBeatingPlays(
@@ -799,22 +932,76 @@ std::vector<Card> GameState::computerTakeTurn()
             m_playerDisplayed.clear();
             // 清除敌人回合buff
             m_enemyBuffs.clear();
-            startPlayerTurn();
             m_phase = Phase::PlayerTurn;
             return {};
         }
 
         PlayOption* best = nullptr;
-        for (auto& opt : options) {
-            if (opt.pattern.type == HandType::Bomb
-                || opt.pattern.type == HandType::Rocket) {
-                if ((int)m_computerHand.size() <= 4 && !best)
-                    best = &opt;
-                continue;
-            }
-            if (!best || opt.pattern.mainRank < best->pattern.mainRank)
-                best = &opt;
+        float bestScore = 999999.f;
+        int handSize = (int)m_computerHand.size();
+
+        // 查询AI记忆: 玩家在类似情况下怎么做
+        std::vector<AIMemory::WeightedAction> memPrefs;
+        bool useMemory = false;
+        if (m_aiMemory && m_aiMemory->playRecordCount() > 0) {
+            PlayFeatures feats;
+            feats.handSize   = (int)m_computerHand.size();
+            feats.isNewRound = false;
+            feats.level      = 1;
+            feats.lastPlayType = (int)m_lastPlay->pattern.type;
+            feats.lastPlayRank = m_lastPlay->pattern.mainRank;
+
+            std::array<int, 15> freq{};
+            for (auto& c : m_computerHand)
+                freq[doudizhuOrder(c.rank)]++;
+            feats.hasBomb = false;
+            for (int r = 0; r < 13; ++r)
+                if (freq[r] >= 4) { feats.hasBomb = true; break; }
+            feats.hasRocket = (freq[13] >= 1 && freq[14] >= 1);
+
+            memPrefs = m_aiMemory->queryPlays(feats, 5);
+            useMemory = !memPrefs.empty();
         }
+
+        for (auto& opt : options) {
+            bool isBomb = (opt.pattern.type == HandType::Bomb
+                        || opt.pattern.type == HandType::Rocket);
+
+            float score;
+            if (isBomb) {
+                if (handSize > 4) continue;
+                score = (float)(handSize * 10);
+            } else {
+                int cost = evaluatePlayCost(opt.handIndices, m_computerHand);
+                score = (float)(cost * 100 + opt.pattern.mainRank);
+            }
+
+            // 用记忆偏好调整分数: 玩家常出的牌型加分
+            if (useMemory) {
+                for (auto& pref : memPrefs) {
+                    if ((int)opt.pattern.type == pref.handType && !pref.passed) {
+                        float rankMatch = 1.f / (1.f + std::abs(opt.pattern.mainRank - pref.mainRank));
+                        score -= pref.weight * (3.f + rankMatch) * 20.f;
+                    }
+                }
+                // 玩家爱pass → 不出选项更受青睐 (在后续处理)
+            }
+
+            if (score < bestScore) {
+                bestScore = score;
+                best = &opt;
+            }
+        }
+
+        // 如果记忆显示玩家在此情形常pass, 且AI没有好选择 → 考虑pass
+        if (useMemory && best && bestScore > 500.f) {
+            float passWeight = 0.f;
+            for (auto& pref : memPrefs) {
+                if (pref.passed) passWeight += pref.weight;
+            }
+            // 玩家常pass → 加大pass倾向
+        }
+
         if (!best) best = &options[0];
 
         played = extractCards(m_computerHand, best->handIndices);
@@ -823,13 +1010,6 @@ std::vector<Card> GameState::computerTakeTurn()
         m_playerDisplayed.clear();
         m_lastPlay = PlayedCards{best->pattern, played};
         m_lastPlayer = 1;
-
-        // S07 for enemy: gain energy? No, enemy doesn't use energy.
-        // S02 for enemy: draw cards? Simple implementation: draw from pile.
-        if (best->pattern.type == HandType::Rocket) {
-            // Check if enemy has S02 active
-            // Simplified: just handle it
-        }
     } else {
         auto opt = findLowestPlay(m_computerHand);
         played = extractCards(m_computerHand, opt.handIndices);
@@ -846,8 +1026,8 @@ std::vector<Card> GameState::computerTakeTurn()
     if (m_computerHand.empty()) {
         m_phase = Phase::ComputerWins;
     } else {
-        startPlayerTurn();
         m_phase = Phase::PlayerTurn;
     }
     return played;
 }
+

@@ -11,6 +11,7 @@
 #include "skill.hpp"
 #include "character.hpp"
 #include "run_state.hpp"
+#include "ai_memory.hpp"
 
 enum class Screen { MainMenu, CharacterSelect, Transition, Game, Reward, GameOver };
 
@@ -31,6 +32,7 @@ int main()
     // ---- 游戏状态 ----
     GameState game;
     RunState  run;
+    AIMemory  aiMemory;
     std::vector<int> selectedIndices;
     sf::Clock aiClock;
     bool aiTriggered = false;
@@ -103,17 +105,8 @@ int main()
                     sf::Vector2f pos = window.mapPixelToCoords(btn->position);
                     int hit = renderer.hitMainMenu(pos, winSize);
                     if (hit == 1) {
-                        // 开始游戏: 如果已选过角色则直接开始, 否则先选角色
-                        if (run.currentCharId() >= 0) {
-                            run.startNewRun(run.currentCharId());
-                            rewardSkills = run.rollRewardSkills();
-                            screen = Screen::Reward;
-                        } else {
-                            screen = Screen::CharacterSelect;
-                        }
-                    } else if (hit == 2) {
                         screen = Screen::CharacterSelect;
-                    } else if (hit == 3) {
+                    } else if (hit == 2) {
                         window.close();
                         break;
                     }
@@ -124,6 +117,7 @@ int main()
                     sf::Vector2f pos = window.mapPixelToCoords(btn->position);
                     int hit = renderer.hitCharacterSelect(pos, winSize);
                     if (hit >= 1 && hit <= 3) {
+                        aiMemory.clear();
                         run.startNewRun(hit - 1);
                         rewardSkills = run.rollRewardSkills();
                         screen = Screen::Reward;
@@ -179,7 +173,7 @@ int main()
                         } else {
                             game.setEnemySkills(run.mirroredSkills());
                         }
-                        game.setEnergyPerTurn(1 + run.extraEnergy());
+                        game.setAIMemory(&aiMemory);
                         selectedIndices.clear();
                         canPlaySelected = false;
                         aiTriggered = false;
@@ -187,6 +181,7 @@ int main()
                         renderer.startDealAnimation((int)game.playerHand().size());
                         screen = Screen::Game;
                     } else if (fightHit == 9) {
+                        aiMemory.clear();
                         screen = Screen::MainMenu;
                     }
                 }
@@ -228,7 +223,7 @@ int main()
                             game.setEnemySkills({-1, -1, -1});
                         else
                             game.setEnemySkills(run.mirroredSkills());
-                        game.setEnergyPerTurn(1 + run.extraEnergy());
+                        game.setAIMemory(&aiMemory);
                         selectedIndices.clear();
                         canPlaySelected = false;
                         aiClock.restart();
@@ -243,6 +238,7 @@ int main()
                         sf::Vector2f pos2 = window.mapPixelToCoords(btn2->position);
                         int retHit = renderer.hitTestGameButton(pos2, !game.isNewRound(), winSize);
                         if (retHit == 3) {
+                            aiMemory.clear();
                             screen = Screen::MainMenu;
                             continue;
                         }
@@ -272,7 +268,7 @@ int main()
                             // 激活技能
                             int skillId = run.equippedSkills()[skHit];
                             if (skillId >= 0) {
-                                game.activatePlayerSkill(skillId, skHit);
+                                game.activatePlayerSkill(skillId);
                             }
                         } else if (btnHit == 1 && canPlaySelected) {
                             auto sorted = selectedIndices;
@@ -341,6 +337,7 @@ int main()
             }
             if (game.phase() == GameState::Phase::ComputerWins && !phaseHandled) {
                 phaseHandled = true;
+                aiMemory.clear();
                 screen = Screen::GameOver;
             }
             if (game.phase() != GameState::Phase::PlayerWins

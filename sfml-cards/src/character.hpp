@@ -10,8 +10,6 @@ struct CharacterDef
     std::wstring passiveName;
     std::wstring passiveDesc;
     int extraCards;
-    int extraEnergy;
-    bool noFirstCool;
 };
 
 constexpr int CHAR_COUNT = 3;

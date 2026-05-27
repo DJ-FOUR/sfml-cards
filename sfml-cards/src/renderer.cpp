@@ -21,9 +21,6 @@ sf::Color skillCardHover(20, 30, 10);
 sf::Color skillCardOwned(8, 8, 8);
 sf::Color slotEmptyColor(17, 17, 17);
 sf::Color slotFilledColor(20, 30, 10);
-sf::Color energyFillColor(204, 255, 0);
-sf::Color energyBgColor(17, 17, 17);
-
 // 新风格主色
 constexpr sf::Color NEON_GREEN(204, 255, 0);
 constexpr sf::Color DARK_BG(5, 5, 5);
@@ -142,8 +139,6 @@ Renderer::Renderer(sf::RenderWindow& window)
     m_passBtn.setFillColor(btnColor);
     m_playBtn.setFillColor(btnColor);
     m_returnBtn.setFillColor(btnColor);
-    m_energyBarBg.setFillColor(energyBgColor);
-    m_energyBarFill.setFillColor(energyFillColor);
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
         m_skillBtns[i].setFillColor(slotEmptyColor);
 }
@@ -199,14 +194,12 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
     m_playBtnText   = std::make_unique<sf::Text>(m_font, L"出牌", 18);
     m_passBtnText   = std::make_unique<sf::Text>(m_font, L"不出", 18);
     m_returnBtnText = std::make_unique<sf::Text>(m_font, L"返回", 18);
-    m_energyText    = std::make_unique<sf::Text>(m_font, L"", 18);
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
         m_skillBtnTexts[i] = std::make_unique<sf::Text>(m_font, L"", 16);
 
     for (auto* t : {m_playerLabel.get(), m_computerLabel.get(), m_statusText.get(),
-                    m_playBtnText.get(), m_passBtnText.get(), m_returnBtnText.get(),
-                    m_energyText.get()})
+                    m_playBtnText.get(), m_passBtnText.get(), m_returnBtnText.get()})
         t->setFillColor(sf::Color::White);
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
         m_skillBtnTexts[i]->setFillColor(sf::Color::White);
@@ -248,6 +241,8 @@ void Renderer::updateAnimations(float dt)
         if (i >= m_handCardYOffsets.size()) break;
         m_handCardYOffsets[i] += (m_handCardTargets[i] - m_handCardYOffsets[i]) * CARD_SPEED * dt;
     }
+
+    m_shakeTimer += dt;
 
     // 发牌动画更新
     if (m_dealActive) {
@@ -604,15 +599,15 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     name.setPosition({x + (w - nsz.x) / 2.f, (iconBot + infoTop - nsz.y) / 2.f});
     m_window.draw(name);
 
-    // 底部黑条区域（能量/冷却）
+    // 底部黑条区域
     sf::RectangleShape infoBar({w - cut * 2, h * 0.055f});
     infoBar.setPosition({x + cut, y + h - h * 0.065f});
     infoBar.setFillColor(sf::Color(5, 5, 5));
     m_window.draw(infoBar);
 
-    std::wstring costStr = L"ENERGY: " + std::to_wstring(sk.energyCost)
-                         + L"    CD: " + std::to_wstring(sk.cooldown);
-    sf::Text costText(m_font, costStr, (unsigned)(h * 0.032f));
+    bool isTrigger = (skillId == 1 || skillId == 6 || skillId == 7);
+    std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
+    sf::Text costText(m_font, typeStr, (unsigned)(h * 0.032f));
     costText.setFillColor(sf::Color(136, 136, 136));
     auto csz = costText.getGlobalBounds().size;
     costText.setPosition({x + (w - csz.x) / 2.f, y + h - h * 0.058f});
@@ -627,19 +622,16 @@ void Renderer::drawMainMenu(sf::Vector2u winSize, const sf::Vector2f& mousePos)
     // [IMG-LOGO] 标题区
     drawTitle(L"斗牌ROGUE", 0.15f, winSize);
 
-    auto r1 = menuButtonRect(0, 3, winSize);
-    auto r2 = menuButtonRect(1, 3, winSize);
-    auto r3 = menuButtonRect(2, 3, winSize);
+    auto r1 = menuButtonRect(0, 2, winSize);
+    auto r2 = menuButtonRect(1, 2, winSize);
     drawMenuButton(r1, L"开始游戏", true, r1.contains(mousePos), winSize);
-    drawMenuButton(r2, L"选择角色", true, r2.contains(mousePos), winSize);
-    drawMenuButton(r3, L"退出",     true, r3.contains(mousePos), winSize);
+    drawMenuButton(r2, L"退出",     true, r2.contains(mousePos), winSize);
 }
 
 int Renderer::hitMainMenu(const sf::Vector2f& pos, sf::Vector2u winSize)
 {
-    if (menuButtonRect(0, 3, winSize).contains(pos)) return 1; // 开始游戏
-    if (menuButtonRect(1, 3, winSize).contains(pos)) return 2; // 选择角色
-    if (menuButtonRect(2, 3, winSize).contains(pos)) return 3; // 退出
+    if (menuButtonRect(0, 2, winSize).contains(pos)) return 1; // 开始游戏
+    if (menuButtonRect(1, 2, winSize).contains(pos)) return 2; // 退出
     return 0;
 }
 
@@ -820,7 +812,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             m_window.draw(hbg);
         }
 
-        std::wstring label = L"[" + sk.name + L"]" + std::to_wstring(sid + 1) + L"  " + sk.desc + L" (费" + std::to_wstring(sk.energyCost) + L" CD" + std::to_wstring(sk.cooldown) + L")";
+        std::wstring label = L"[" + sk.name + L"]" + std::to_wstring(sid + 1) + L"  " + sk.desc;
         sf::Text st(m_font, label, (unsigned)(itemH * 0.38f));
         st.setFillColor(isEquipped ? NEON_GREEN : sf::Color::White);
         st.setPosition({leftX + w * 0.012f, iy + itemH * 0.15f});
@@ -874,9 +866,9 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             slotText.setPosition({sx + (slotW - tsz.x) / 2.f, slotStartY + (hover ? -2.f : 0.f) + slotH * 0.22f});
             m_window.draw(slotText);
 
-            std::wstring costStr = L"费" + std::to_wstring(sk.energyCost)
-                                 + L" CD" + std::to_wstring(sk.cooldown);
-            sf::Text cost(m_font, costStr, (unsigned)(slotH * 0.12f));
+            bool isTrigger = (sid == 1 || sid == 6 || sid == 7);
+            std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
+            sf::Text cost(m_font, typeStr, (unsigned)(slotH * 0.12f));
             cost.setFillColor(TEXT_DIM);
             auto csz = cost.getGlobalBounds().size;
             cost.setPosition({sx + (slotW - csz.x) / 2.f, slotStartY + (hover ? -2.f : 0.f) + slotH * 0.60f});
@@ -931,28 +923,45 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         }
     }
 
-    // ---- 开始战斗按钮（警示风格） ----
-    float btnW = w * 0.55f;
-    float btnH = h * 0.075f;
+    // ---- 开始战斗按钮（矩形，悬停抖动） ----
+    constexpr sf::Color MAGENTA(255, 0, 128);
+    constexpr sf::Color MAGENTA_BG(30, 5, 20);
+
+    float btnW = w * 0.18f;
+    float btnH = h * 0.09f;
     float btnX = (w - btnW) / 2.f;
-    float btnY = h * 0.86f;
+    float btnY = h * 0.83f;
+    float btnCut = 8.f;
     bool fightHover = sf::FloatRect({btnX, btnY}, {btnW, btnH}).contains(mousePos);
 
-    // 顶部斜条纹
-    drawHazardStripes(m_window, btnX, btnY, btnW, 4.f, 8.f);
-    // 底部斜条纹
-    drawHazardStripes(m_window, btnX, btnY + btnH - 4.f, btnW, 4.f, 8.f);
     // 按钮主体
-    sf::Color fightFill = fightHover ? NEON_GREEN : sf::Color(26, 42, 10);
-    sf::Color fightTextCol = fightHover ? sf::Color::Black : NEON_GREEN;
-    drawBeveledRect(m_window, btnX, btnY + 4.f, btnW, btnH - 8.f, 8.f,
-                    fightFill, fightHover ? sf::Color::White : NEON_GREEN, 2.f);
+    sf::Color btnFill = fightHover ? MAGENTA_BG : sf::Color(10, 20, 5);
+    sf::Color btnOutline = fightHover ? MAGENTA : NEON_GREEN;
+    drawBeveledRect(m_window, btnX, btnY, btnW, btnH, btnCut,
+                    btnFill, btnOutline, fightHover ? 2.5f : 2.f);
 
-    sf::Text fightText(m_font, L"开始战斗", (unsigned)(btnH * 0.38f));
-    fightText.setFillColor(fightTextCol);
+    // 悬停时顶部条纹装饰
+    if (fightHover) {
+        drawHazardStripes(m_window, btnX, btnY + 2.f, btnW, 4.f, 8.f);
+        drawHazardStripes(m_window, btnX, btnY + btnH - 6.f, btnW, 4.f, 8.f);
+    }
+
+    // 文字 — 悬停时剧烈抖动
+    float fontSize = btnH * 0.35f;
+    sf::Text fightText(m_font, L"开始战斗", (unsigned)fontSize);
+    fightText.setFillColor(fightHover ? MAGENTA : NEON_GREEN);
     fightText.setStyle(sf::Text::Bold);
     auto fsz = fightText.getGlobalBounds().size;
-    fightText.setPosition({btnX + (btnW - fsz.x) / 2.f, btnY + 4.f + (btnH - 8.f - fsz.y) / 2.f - 2.f});
+    float baseX = btnX + (btnW - fsz.x) / 2.f;
+    float baseY = btnY + (btnH - fsz.y) / 2.f - fsz.y * 0.15f;
+
+    float shakeX = 0.f, shakeY = 0.f;
+    if (fightHover) {
+        float t = m_shakeTimer;
+        shakeX = std::sin(t * 83.f) * 4.5f + std::cos(t * 137.f) * 3.2f + std::sin(t * 211.f) * 2.1f;
+        shakeY = std::cos(t * 79.f) * 4.2f + std::sin(t * 149.f) * 3.5f + std::cos(t * 193.f) * 2.8f;
+    }
+    fightText.setPosition({baseX + shakeX, baseY + shakeY});
     m_window.draw(fightText);
 }
 
@@ -997,10 +1006,10 @@ int Renderer::hitTransitionFight(const sf::Vector2f& pos, sf::Vector2u winSize)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
-    float btnW = w * 0.20f;
-    float btnH = h * 0.065f;
+    float btnW = w * 0.18f;
+    float btnH = h * 0.09f;
     float btnX = (w - btnW) / 2.f;
-    float btnY = h * 0.88f;
+    float btnY = h * 0.83f;
     if (sf::FloatRect({btnX, btnY}, {btnW, btnH}).contains(pos)) return 1;
 
     float bx = w * 0.03f, by = h * 0.03f;
@@ -1081,10 +1090,10 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
         descText.setPosition({panelX + panelW * 0.04f, panelY + panelH * 0.42f});
         m_window.draw(descText);
 
-        // 能量 / 冷却
-        std::wstring costStr = L"ENERGY: " + std::to_wstring(sk.energyCost)
-                             + L"    CD: " + std::to_wstring(sk.cooldown);
-        sf::Text costText(m_font, costStr, (unsigned)(panelH * 0.14f));
+        // 技能类型
+        bool isTrigger = (hoveredSid == 1 || hoveredSid == 6 || hoveredSid == 7);
+        std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
+        sf::Text costText(m_font, typeStr, (unsigned)(panelH * 0.14f));
         costText.setFillColor(sf::Color(150, 150, 150));
         auto csz = costText.getGlobalBounds().size;
         costText.setPosition({panelX + panelW - csz.x - panelW * 0.05f,
@@ -1198,7 +1207,7 @@ sf::Vector2f Renderer::handCardPos(int index, int total,
     float s = handScale((float)winSize.y);
     float dispW = CARD_W * s;
     float avail = w * 0.92f;
-    float overlap = dispW * 0.65f;
+    float overlap = dispW * 0.52f;
     if (total > 1) {
         float maxOverlap = (avail - dispW) / (total - 1);
         if (overlap > maxOverlap) overlap = maxOverlap;
@@ -1342,52 +1351,6 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         drawDbgBtn(dbgX2, L"我输");
     }
 
-    // 能量条 [IMG-ENERGY-BAR] [IMG-ENERGY-FILL] — 分段式电池格
-    {
-        float eBarW = w * 0.14f;
-        float eBarH = h * 0.035f;
-        float eBarX = w * 0.42f;
-        float eBarY = h * 0.92f;
-        int segCount = MAX_ENERGY;
-        float segTotalW = eBarW - 4.f;
-        float segW = (segTotalW - (segCount - 1) * 2.f) / segCount;
-
-        // 槽背景
-        sf::RectangleShape eBg({eBarW, eBarH});
-        eBg.setPosition({eBarX, eBarY});
-        eBg.setFillColor(sf::Color(17, 17, 17));
-        eBg.setOutlineColor(BORDER_NORMAL);
-        eBg.setOutlineThickness(1.f);
-        m_window.draw(eBg);
-
-        // 分段填充
-        for (int i = 0; i < segCount; ++i) {
-            float sx = eBarX + 2.f + i * (segW + 2.f);
-            sf::Color segFill = (i < state.playerEnergy()) ? NEON_GREEN : sf::Color(17, 17, 17);
-            sf::RectangleShape seg({segW, eBarH - 4.f});
-            seg.setPosition({sx, eBarY + 2.f});
-            seg.setFillColor(segFill);
-            m_window.draw(seg);
-        }
-
-        // 标签
-        sf::Text eLabel(m_font, L"PWR", (unsigned)(eBarH * 0.65f));
-        eLabel.setFillColor(sf::Color(136, 136, 136));
-        auto elsz = eLabel.getGlobalBounds().size;
-        eLabel.setPosition({eBarX - elsz.x - 8.f, eBarY + (eBarH - elsz.y) / 2.f - 2.f});
-        m_window.draw(eLabel);
-
-        std::wstring eStr = L"ENERGY: " + std::to_wstring(state.playerEnergy())
-                          + L"/" + std::to_wstring(MAX_ENERGY);
-        m_energyText->setString(eStr);
-        m_energyText->setCharacterSize((unsigned)(eBarH * 0.75f));
-        m_energyText->setFillColor(NEON_GREEN);
-        auto esz = m_energyText->getGlobalBounds().size;
-        m_energyText->setPosition({eBarX + eBarW + w * 0.012f,
-                                    eBarY + (eBarH - esz.y) / 2.f - 2.f});
-        m_window.draw(*m_energyText);
-    }
-
     // 技能槽 (卡牌比例 CARD_W:CARD_H, 左下角) — 整体面板
     auto& allSkills = getAllSkills();
     float skH = h * 0.11f;
@@ -1414,16 +1377,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         sf::Color slotColor = slotEmptyColor;
         sf::Color topBand = BORDER_NORMAL;
         if (sid >= 0) {
-            if (state.playerCooldowns()[i] > 0) {
-                slotColor = sf::Color(30, 30, 30);
-                topBand = BORDER_NORMAL;
-            } else if (state.playerEnergy() < allSkills[sid].energyCost) {
-                slotColor = sf::Color(40, 40, 10);
-                topBand = sf::Color(85, 85, 0);
-            } else {
-                slotColor = sf::Color(20, 30, 10);
-                topBand = NEON_GREEN;
-            }
+            slotColor = sf::Color(20, 30, 10);
+            topBand = NEON_GREEN;
         }
         drawBeveledRect(m_window, sx, skY, skW, skH, skCut,
                         slotColor, BORDER_NORMAL, 1.f);
@@ -1466,29 +1421,17 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             float nameF = skW * 0.22f;
             m_skillBtnTexts[i]->setString(sk.name);
             m_skillBtnTexts[i]->setCharacterSize((unsigned)nameF);
-            if (state.playerCooldowns()[i] > 0)
-                m_skillBtnTexts[i]->setFillColor(TEXT_DISABLED);
-            else if (state.playerEnergy() < allSkills[sid].energyCost)
-                m_skillBtnTexts[i]->setFillColor(TEXT_DISABLED);
-            else
-                m_skillBtnTexts[i]->setFillColor(sf::Color::White);
+            m_skillBtnTexts[i]->setFillColor(sf::Color::White);
             auto tsz = m_skillBtnTexts[i]->getGlobalBounds().size;
             m_skillBtnTexts[i]->setPosition({sx + (skW - tsz.x) / 2.f,
                                               skY + skH * 0.48f});
             m_window.draw(*m_skillBtnTexts[i]);
 
-            // 冷却/消耗
-            std::wstring info;
-            sf::Color infoCol;
-            if (state.playerCooldowns()[i] > 0) {
-                info = L"CD" + std::to_wstring(state.playerCooldowns()[i]);
-                infoCol = ENEMY_RED;
-            } else {
-                info = L"费" + std::to_wstring(sk.energyCost);
-                infoCol = NEON_GREEN;
-            }
+            // 技能类型标签
+            bool isTrigger = (sid == 1 || sid == 6 || sid == 7);
+            std::wstring info = isTrigger ? L"TRIG" : L"BUFF";
             sf::Text infoText(m_font, info, (unsigned)(skW * 0.20f));
-            infoText.setFillColor(infoCol);
+            infoText.setFillColor(NEON_GREEN);
             auto csz = infoText.getGlobalBounds().size;
             infoText.setPosition({sx + (skW - csz.x) / 2.f, skY + skH * 0.78f});
             m_window.draw(infoText);
@@ -1522,40 +1465,26 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         float ex = eskX + i * (eskW + eskGap);
         float ec = 2.f;
 
-        sf::Color efill = (esid >= 0) ? (state.enemyCooldowns()[i] > 0 ? sf::Color(40, 20, 20) : sf::Color(60, 30, 30))
+        sf::Color efill = (esid >= 0) ? sf::Color(60, 30, 30)
                           : sf::Color(17, 17, 17);
         sf::Color eout = (esid >= 0) ? ENEMY_RED : BORDER_NORMAL;
         drawBeveledRect(m_window, ex, eskY, eskW, eskH, ec, efill, eout, 1.f);
 
         if (esid >= 0) {
-            if (state.enemyCooldowns()[i] > 0) {
-                // 冷却中覆盖半透明黑
-                sf::RectangleShape cdOverlay({eskW - ec * 2, eskH - ec * 2});
-                cdOverlay.setPosition({ex + ec, eskY + ec});
-                cdOverlay.setFillColor(sf::Color(0, 0, 0, 120));
-                m_window.draw(cdOverlay);
+            auto& esk = allSkills[esid];
+            sf::Text et(m_font, esk.name, (unsigned)(eskW * 0.18f));
+            et.setFillColor(sf::Color(255, 180, 180));
+            auto etsz = et.getGlobalBounds().size;
+            et.setPosition({ex + (eskW - etsz.x) / 2.f, eskY + eskH * 0.20f});
+            m_window.draw(et);
 
-                sf::Text cdText(m_font, L"CD" + std::to_wstring(state.enemyCooldowns()[i]),
-                                (unsigned)(eskW * 0.28f));
-                cdText.setFillColor(ENEMY_RED);
-                auto cdsz = cdText.getGlobalBounds().size;
-                cdText.setPosition({ex + (eskW - cdsz.x) / 2.f, eskY + eskH * 0.55f});
-                m_window.draw(cdText);
-            } else {
-                auto& esk = allSkills[esid];
-                sf::Text et(m_font, esk.name, (unsigned)(eskW * 0.18f));
-                et.setFillColor(sf::Color(255, 180, 180));
-                auto etsz = et.getGlobalBounds().size;
-                et.setPosition({ex + (eskW - etsz.x) / 2.f, eskY + eskH * 0.20f});
-                m_window.draw(et);
-
-                sf::Text costText(m_font, L"费" + std::to_wstring(esk.energyCost),
-                                  (unsigned)(eskW * 0.20f));
-                costText.setFillColor(sf::Color(200, 150, 150));
-                auto csz = costText.getGlobalBounds().size;
-                costText.setPosition({ex + (eskW - csz.x) / 2.f, eskY + eskH * 0.55f});
-                m_window.draw(costText);
-            }
+            bool isTrigger = (esid == 1 || esid == 6 || esid == 7);
+            std::wstring typeStr = isTrigger ? L"TRIG" : L"BUFF";
+            sf::Text costText(m_font, typeStr, (unsigned)(eskW * 0.20f));
+            costText.setFillColor(sf::Color(200, 150, 150));
+            auto csz = costText.getGlobalBounds().size;
+            costText.setPosition({ex + (eskW - csz.x) / 2.f, eskY + eskH * 0.55f});
+            m_window.draw(costText);
         } else {
             sf::Text empty(m_font, L"--", (unsigned)(eskW * 0.22f));
             empty.setFillColor(TEXT_DISABLED);
@@ -1708,6 +1637,8 @@ void Renderer::renderGame(const GameState& state,
     if (m_dealActive) {
         // --- 发牌动画模式: 底部中心旋转 + 扇形展开 + 飞入 ---
         float middle = (pn - 1) / 2.0f;
+        float maxAngleDeg = 0.0f;
+        float arcCurve = 0.0f;
         for (int i = 0; i < pn; ++i) {
             if (i >= (int)m_dealAnim.size() || !m_dealAnim[i].started)
                 continue;
@@ -1716,12 +1647,12 @@ void Renderer::renderGame(const GameState& state,
             float t = m_dealAnim[i].progress;
             float eased = easeOutCubic(t);
 
-            float offset = i - middle;
-            float fanRot = offset * 2.0f;
-            float arcSink = std::abs(offset) * 2.0f;
+            float norm = (pn > 1) ? (float)(i - middle) / middle : 0.0f;
+            float fanRot = maxAngleDeg * std::sin(norm * 3.14159265f / 2.0f) * eased;
+            float dist = std::abs(i - middle);
+            float arcSink = dist * dist * arcCurve * eased;
 
             float curScale = hs * (DEAL_INIT_SCL + (1.0f - DEAL_INIT_SCL) * eased);
-            float curRot = fanRot * eased;
             std::uint8_t curAlpha = (std::uint8_t)(255 * eased);
 
             float bcx = pos.x + dispW / 2.0f;
@@ -1735,13 +1666,15 @@ void Renderer::renderGame(const GameState& state,
             sprite.setOrigin({CARD_W / 2.0f, CARD_H});
             sprite.setScale({curScale, curScale});
             sprite.setPosition({bcx, bcy});
-            sprite.setRotation(sf::degrees(curRot));
+            sprite.setRotation(sf::degrees(fanRot));
             sprite.setColor(sf::Color(255, 255, 255, curAlpha));
             m_window.draw(sprite);
         }
     } else {
         // --- 扇形排布 ---
         float middle = (pn - 1) / 2.0f;
+        float maxAngleDeg = 0.0f;
+        float arcCurve = 0.0f;
 
         // ---- 第一步：根据遮挡顺序（从上层到下层）找出唯一悬停的卡牌 ----
         int hoveredIdx = -1;
@@ -1749,10 +1682,24 @@ void Renderer::renderGame(const GameState& state,
             auto pos = handCardPos(i, pn, phY, winSize);
             bool sel = std::find(selectedIndices.begin(), selectedIndices.end(), i)
                        != selectedIndices.end();
-            float arcSink = std::abs(i - middle) * 2.0f;
-            float offset = m_handCardYOffsets[i];
-            if (offset < 0.5f) offset = (sel ? hoverLift : 0.0f);
-            sf::FloatRect visualRect({pos.x, pos.y + arcSink - offset}, {dispW, dispH});
+            float norm = (pn > 1) ? (float)(i - middle) / middle : 0.0f;
+            float fanRot = maxAngleDeg * std::sin(norm * 3.14159265f / 2.0f);
+            float dist = std::abs(i - middle);
+            float arcSink = dist * dist * arcCurve;
+
+            float curLift = m_handCardYOffsets[i];
+            if (curLift < 0.5f) curLift = (sel ? hoverLift : 0.0f);
+            float liftX = 0.f, liftY = curLift;
+            if (std::abs(fanRot) > 0.5f) {
+                float rad = fanRot * 3.14159265f / 180.0f;
+                liftX = curLift * std::sin(rad);
+                liftY = curLift * std::cos(rad);
+            }
+
+            float bcx = pos.x + dispW / 2.0f + liftX;
+            float bcy = pos.y + dispH + arcSink - liftY;
+
+            sf::FloatRect visualRect({bcx - dispW / 2.0f, bcy - dispH}, {dispW, dispH});
             if (visualRect.contains(mousePos)) {
                 hoveredIdx = i;
                 break; // 最上层（右侧）优先命中，下层被遮挡
@@ -1765,19 +1712,28 @@ void Renderer::renderGame(const GameState& state,
             bool sel = std::find(selectedIndices.begin(), selectedIndices.end(), i)
                        != selectedIndices.end();
 
+            float norm = (pn > 1) ? (float)(i - middle) / middle : 0.0f;
+            float fanRot = maxAngleDeg * std::sin(norm * 3.14159265f / 2.0f);
+            float dist = std::abs(i - middle);
+            float arcSink = dist * dist * arcCurve;
+
             // 1. 先计算当前视觉偏移（与绘制一致）
-            float offset = m_handCardYOffsets[i];
-            if (offset < 0.5f) offset = (sel ? hoverLift : 0.0f); // 首帧立即到位
+            float curLift = m_handCardYOffsets[i];
+            if (curLift < 0.5f) curLift = (sel ? hoverLift : 0.0f); // 首帧立即到位
 
             // 2. 只有最上层被悬停的卡牌才算 hover，避免穿透到下层
             bool hover = (i == hoveredIdx);
             m_handCardTargets[i] = (sel || hover) ? hoverLift : 0.0f;
 
-            float fanRot = (i - middle) * 2.0f;
-            float arcSink = std::abs(i - middle) * 2.0f;
+            float liftX = 0.f, liftY = curLift;
+            if (std::abs(fanRot) > 0.5f) {
+                float rad = fanRot * 3.14159265f / 180.0f;
+                liftX = curLift * std::sin(rad);
+                liftY = curLift * std::cos(rad);
+            }
 
-            float bcx = pos.x + dispW / 2.0f;
-            float bcy = pos.y + dispH + arcSink - offset;
+            float bcx = pos.x + dispW / 2.0f + liftX;
+            float bcy = pos.y + dispH + arcSink - liftY;
 
             auto it = m_faceTextures.find(ph[i].imageIndex);
             const sf::Texture* tex = (it != m_faceTextures.end()) ? &it->second : &m_backTexture;
@@ -1841,32 +1797,54 @@ int Renderer::hitTestCard(const sf::Vector2f& worldPos,
     float yBase = handCardY((float)winSize.y);
     float lift = winSize.y * 0.025f;
     float middle = (cardCount - 1) / 2.0f;
+    float maxAngleDeg = 0.0f;
+    float arcCurve = 0.0f;
 
     for (int i = cardCount - 1; i >= 0; --i) {
         auto pos = handCardPos(i, cardCount, yBase, winSize);
         bool sel = std::find(selectedIndices.begin(), selectedIndices.end(), i)
                    != selectedIndices.end();
 
-        float arcSink = std::abs(i - middle) * 2.0f;
+        float norm = (cardCount > 1) ? (float)(i - middle) / middle : 0.0f;
+        float fanRot = maxAngleDeg * std::sin(norm * 3.14159265f / 2.0f);
+        float dist = std::abs(i - middle);
+        float arcSink = dist * dist * arcCurve;
 
         // 1. 计算当前视觉偏移（与 renderGame 绘制逻辑一致）
-        float offset = 0.0f;
+        float curLift = 0.0f;
         if (sel) {
-            offset = lift;
+            curLift = lift;
         } else if (i < (int)m_handCardYOffsets.size()) {
-            offset = m_handCardYOffsets[i];
-            if (offset < 0.5f) offset = 0.0f;
+            curLift = m_handCardYOffsets[i];
+            if (curLift < 0.5f) curLift = 0.0f;
         }
 
-        // 2. 实时检测鼠标是否在当前视觉区域内
-        sf::FloatRect visualBounds({pos.x, pos.y + arcSink - offset}, {dispW, dispH});
+        float liftX = 0.f, liftY = curLift;
+        if (std::abs(fanRot) > 0.5f) {
+            float rad = fanRot * 3.14159265f / 180.0f;
+            liftX = curLift * std::sin(rad);
+            liftY = curLift * std::cos(rad);
+        }
+
+        float bcx = pos.x + dispW / 2.0f + liftX;
+        float bcy = pos.y + dispH + arcSink - liftY;
+
+        // 2. 实时检测鼠标是否在当前视觉区域内（AABB 近似）
+        sf::FloatRect visualBounds({bcx - dispW / 2.0f, bcy - dispH}, {dispW, dispH});
         bool hover = visualBounds.contains(worldPos);
 
         // 3. 选中或正被悬停时，检测区域直接上浮到完整高度（不受动画延迟影响）
-        float hitOffset = (sel || hover) ? lift : offset;
-        pos.y += arcSink - hitOffset;
+        float hitLift = (sel || hover) ? lift : curLift;
+        float hitLiftX = 0.f, hitLiftY = hitLift;
+        if (std::abs(fanRot) > 0.5f) {
+            float rad = fanRot * 3.14159265f / 180.0f;
+            hitLiftX = hitLift * std::sin(rad);
+            hitLiftY = hitLift * std::cos(rad);
+        }
+        float hitCx = pos.x + dispW / 2.0f + hitLiftX;
+        float hitCy = pos.y + dispH + arcSink - hitLiftY;
 
-        sf::FloatRect bounds(pos, {dispW, dispH});
+        sf::FloatRect bounds({hitCx - dispW / 2.0f, hitCy - dispH}, {dispW, dispH});
         if (bounds.contains(worldPos)) return i;
     }
     return -1;
