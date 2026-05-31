@@ -1,6 +1,5 @@
 #include "game_state.hpp"
 #include <algorithm>
-#include <stdexcept>
 
 // 斗地主排序常量
 constexpr int R3 = 0, R4 = 1, R5 = 2, R6 = 3, R7 = 4, R8 = 5, R9 = 6,
@@ -69,6 +68,17 @@ static bool canFormAirplane(int startRank, int length, const std::array<int,15>&
         need += std::max(0, 3 - freq[r]);
     }
     return need <= wilds;
+}
+
+static void setHasBombRocket(PlayFeatures& feat, const std::vector<Card>& hand)
+{
+    std::array<int, 15> freq{};
+    for (auto& c : hand)
+        freq[doudizhuOrder(c.rank)]++;
+    feat.hasBomb = false;
+    for (int r = 0; r < 13; ++r)
+        if (freq[r] >= 4) { feat.hasBomb = true; break; }
+    feat.hasRocket = (freq[13] >= 1 && freq[14] >= 1);
 }
 
 std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& cards,
@@ -482,16 +492,10 @@ bool GameState::playerPlay(const std::vector<int>& handIndices)
         feat.lastPlayType = -1;
         feat.lastPlayRank = -1;
 
-        std::array<int, 15> freq{};
         // 使用出牌前的手牌状态检查炸弹/火箭
-        for (auto& c : m_playerHand)
-            freq[doudizhuOrder(c.rank)]++;
-        for (auto& c : cards)
-            freq[doudizhuOrder(c.rank)]++;
-        feat.hasBomb = false;
-        for (int r = 0; r < 13; ++r)
-            if (freq[r] >= 4) { feat.hasBomb = true; break; }
-        feat.hasRocket = (freq[13] >= 1 && freq[14] >= 1);
+        auto preHand = m_playerHand;
+        preHand.insert(preHand.end(), cards.begin(), cards.end());
+        setHasBombRocket(feat, preHand);
 
         PlayAction act;
         act.handType  = (int)pattern->type;
@@ -533,13 +537,7 @@ void GameState::playerPass()
         feat.lastPlayType = m_lastPlay ? (int)m_lastPlay->pattern.type : -1;
         feat.lastPlayRank = m_lastPlay ? m_lastPlay->pattern.mainRank : -1;
 
-        std::array<int, 15> freq{};
-        for (auto& c : m_playerHand)
-            freq[doudizhuOrder(c.rank)]++;
-        feat.hasBomb = false;
-        for (int r = 0; r < 13; ++r)
-            if (freq[r] >= 4) { feat.hasBomb = true; break; }
-        feat.hasRocket = (freq[13] >= 1 && freq[14] >= 1);
+        setHasBombRocket(feat, m_playerHand);
 
         PlayAction act;
         act.passed    = true;
@@ -1130,13 +1128,7 @@ std::vector<Card> GameState::computerTakeTurn()
             feats.lastPlayType = (int)m_lastPlay->pattern.type;
             feats.lastPlayRank = m_lastPlay->pattern.mainRank;
 
-            std::array<int, 15> freq{};
-            for (auto& c : m_computerHand)
-                freq[doudizhuOrder(c.rank)]++;
-            feats.hasBomb = false;
-            for (int r = 0; r < 13; ++r)
-                if (freq[r] >= 4) { feats.hasBomb = true; break; }
-            feats.hasRocket = (freq[13] >= 1 && freq[14] >= 1);
+            setHasBombRocket(feats, m_computerHand);
 
             memPrefs = m_aiMemory->queryPlays(feats, 5);
             useMemory = !memPrefs.empty();
@@ -1170,15 +1162,6 @@ std::vector<Card> GameState::computerTakeTurn()
                 bestScore = score;
                 best = &opt;
             }
-        }
-
-        // 如果记忆显示玩家在此情形常pass, 且AI没有好选择 → 考虑pass
-        if (useMemory && best && bestScore > 500.f) {
-            float passWeight = 0.f;
-            for (auto& pref : memPrefs) {
-                if (pref.passed) passWeight += pref.weight;
-            }
-            // 玩家常pass → 加大pass倾向
         }
 
         if (!best) best = &options[0];

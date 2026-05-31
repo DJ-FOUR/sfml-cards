@@ -45,7 +45,7 @@ Full architecture docs: [AGENTS.md](AGENTS.md) | Gameplay rules: [GAMEPLAY.md](G
 
 ### Screen state machine (`main.cpp`)
 
-`Screen` enum drives the game loop: `MainMenu → CharacterSelect → Reward(初始技能) → Transition → Game → Reward → GameOver`. Main menu has "开始游戏" (→ CharacterSelect) and "退出". After character select, the player picks an initial skill (3 random choices), then goes to Transition to equip before the first battle. Each screen has corresponding `draw*`/`hit*` method pairs in the Renderer. State transitions happen in the event handling block of `main.cpp:95-288`.
+`Screen` enum drives the game loop: `MainMenu → CharacterSelect → WildcardSelect(谋略家) → Reward(初始技能) → Transition → Game → Reward → GameOver`. Main menu has "开始游戏" (→ CharacterSelect) and "退出". After character select, the player picks an initial skill (3 random choices), then goes to Transition to equip before the first battle. Each screen has corresponding `draw*`/`hit*` method pairs in the Renderer. State transitions happen in the event handling block of `main.cpp`.
 
 ### Module dependency graph
 
@@ -59,7 +59,6 @@ main.cpp
   ├── run_state.hpp/cpp   — Run-level state: level #, acquired skills, equipped slots, mirroring
   │     ├── character.hpp/cpp — 3 character definitions with passive abilities
   │     └── skill.hpp/cpp
-  └── save.hpp/cpp        — 3-slot text-based save (legacy, not central to gameplay)
 ```
 
 ### Card image mapping (`card.cpp`)
@@ -142,7 +141,7 @@ Two-component online learning within a single run:
 - Character select cards: float + scale + 3D perspective tilt
 - Reward skill cards: float + scale + glow border
 - Fight button (Transition): magenta outline + hazard stripes + text shake (6-frequency sine wave叠加)
-- All animations use `HoverAnimState` struct with lerp-based smoothing (`SPEED = 14.0f`)
+- All animations use `HoverAnimState` struct with lerp-based smoothing (`ANIM_SPEED_CHAR_HOVER = 14.0f` for characters/skills, `ANIM_SPEED_BTN_HOVER = 18.0f` for buttons, `ANIM_SPEED_CARD_HOVER = 16.0f` for hand cards)
 
 ## Code conventions
 

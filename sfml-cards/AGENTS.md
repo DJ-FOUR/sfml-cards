@@ -20,7 +20,7 @@
 | 构建系统 | CMake ≥ 3.16 |
 | 编译器 | MinGW-w64 GCC（基于 `.vscode/c_cpp_properties.json` 配置） |
 | IDE | VS Code（已配置 tasks / launch / c_cpp_properties） |
-| 平台 | primarily Windows（存档模块含 Linux/Mac 兼容分支） |
+| 平台 | primarily Windows |
 
 无 `package.json`、`pyproject.toml`、`Cargo.toml` 等其他语言生态的配置文件。本项目为纯 C++ 项目。
 
@@ -48,7 +48,6 @@ src/
 ├── character.hpp / character.cpp    # 3个角色定义（仅影响初始手牌数）
 ├── run_state.hpp / run_state.cpp    # Run全局状态：关卡进度、技能获取/装备、镜像继承
 ├── ai_memory.hpp / ai_memory.cpp    # AI学习系统：k-NN出牌 mimicry + 技能使用概率跟踪
-├── save.hpp / save.cpp              # 3槽位文本存档读写（当前未接入主循环）
 └── main.cpp                         # 入口、主循环、Screen状态机、事件路由
 
 images/
@@ -106,13 +105,12 @@ main.cpp
   │     ├── character.hpp/cpp — 3 个角色定义
   │     └── skill.hpp/cpp
   ├── ai_memory.hpp/cpp   — AI 学习记忆（k-NN + 技能使用统计）
-  └── save.hpp/cpp        — 3 槽位文本存档（保留，未接入主循环）
 ```
 
 ### `card` 模块
 
 - 定义 `Suit`（花色：`Spade`, `Heart`, `Club`, `Diamond`, `None`）、`Rank`（点数 `Three`~`BigJoker`）枚举，含大小王。
-- `Card` 结构体含 `suit`、`rank`、`imageIndex`，重载 `<` / `==` / `!=` 以支持斗地主排序（3 < 4 < ... < A < 2 < 小王 < 大王）。
+- `Card` 结构体含 `suit`、`rank`、`imageIndex`，重载 `==` 以支持卡牌比较。排序由 `sortByDZ()` 自定义 lambda 按斗地主牌力顺序（3 < 4 < ... < A < 2 < 小王 < 大王）处理。
 - `createDeck()` 创建 54 张牌并洗牌。
 - `cardFromImageIndex()` 将图片索引 0~53 映射为具体卡牌。
 - 硬编码 `CARD_MAP[54]` 数组定义图片索引到 `(suit, rank)` 的映射关系：
@@ -203,15 +201,9 @@ main.cpp
   - `renderGame` / `hitTestCard` / `hitTestGameButton` / `hitTestSkillSlot` / `hitTestDebugButton`：战斗界面（手牌、出牌区、技能槽、出牌/不出按钮、开发调试用"我赢"/"我输"按钮）
   - `drawReward` / `hitReward`：过关奖励（3选1技能，带悬停缩放发光动画）
   - `drawGameOver` / `hitGameOver`：失败界面
-- `updateAnimations(float dt)`：统一更新所有界面的悬停/缩放/浮动动效。使用 `HoverAnimState` 结构体做 lerp 平滑（`SPEED = 14.0f`）。
+- `updateAnimations(float dt)`：统一更新所有界面的悬停/缩放/浮动动效。使用 `HoverAnimState` 结构体做 lerp 平滑（`ANIM_SPEED_CHAR_HOVER = 14.0f`）。
 - `renderCharCardToRT(int charIdx, bool hover)`：预渲染角色卡片到 `sf::RenderTexture`，支持悬停时的3D透视倾斜效果。
 - `startDealAnimation()` / 发牌动画系统：卡牌从下方飞入，带延迟和缩放效果。
-
-### `save` 模块
-
-- `SaveData`：槽位、关卡、胜场、败场、存在标记、名称。
-- `SaveManager`：读写 `saves/slot{N}.sav` 纯文本文件，格式为 `key=value`。
-- **注意**：当前 `main.cpp` 中并未实例化 `SaveManager`，存档系统处于保留但未激活状态。运行时若接入，会在工作目录下创建 `saves/` 文件夹。`build/` 和 `dist/` 各自有独立的 `saves/` 子目录，运行时存档互不共享。
 
 ### `main` 模块
 
@@ -259,10 +251,9 @@ main.cpp
 
 - **SFML 静态链接**：CMake 定义了 `SFML_STATIC` 并传入 `-static`，链接的是带 `-s` 后缀的静态库。但构建目录中仍可能出现 MinGW 运行时 DLL（`libgcc_s_seh-1.dll`、`libstdc++-6.dll`、`libwinpthread-1.dll`），若需完全单文件分发，需确认链接 flags 实际生效。
 - **字体版权**：`resources/simsun.ttc`（宋体）体积约 18MB，分发时需注意字体许可。
-- **存档路径**：运行时会在工作目录下创建 `saves/` 文件夹。`build/` 和 `dist/` 各自有独立的 `saves/` 子目录，运行时存档互不共享。
 - **图片映射**：`card{idx}.png` 的索引与 `CARD_MAP` 硬编码表一一对应（0~3 为黑桃/红桃/梅花/方片 3，依此类推，48~51 为 2，52~53 为大小王）。更换素材时只需修改 `CARD_MAP`，无需改动渲染逻辑。
 - **素材替换标记**：代码中留有 `[IMG-CHAR-AVATAR]`、`[IMG-SKILL-S01~S08]`、`[IMG-SLOT-01~03]`、`[IMG-ENERGY-BAR]` 等注释标记，指示未来可替换为具体美术素材的位置。
-- **输入安全**：游戏无网络功能，无用户可注入的脚本接口，无外部配置文件解析（除未使用的存档系统）。所有用户输入仅限于鼠标点击和键盘快捷键，由 SFML 事件系统统一处理。
+- **输入安全**：游戏无网络功能，无用户可注入的脚本接口，无外部配置文件解析。所有用户输入仅限于鼠标点击和键盘快捷键，由 SFML 事件系统统一处理。
 
 ---
 

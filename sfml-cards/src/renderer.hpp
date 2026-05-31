@@ -100,11 +100,6 @@ private:
     std::unique_ptr<sf::Text> m_returnBtnText;
     std::unique_ptr<sf::Text> m_skillBtnTexts[MAX_SKILL_SLOTS];
 
-    sf::RectangleShape m_playBtn;
-    sf::RectangleShape m_passBtn;
-    sf::RectangleShape m_returnBtn;
-    sf::RectangleShape m_skillBtns[MAX_SKILL_SLOTS];
-
     // ---- 动态布局 ----
     float handScale(float h) const;
     float playedScale(float h) const;

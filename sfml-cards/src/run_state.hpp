@@ -1,7 +1,6 @@
 #pragma once
 
 #include "skill.hpp"
-#include "character.hpp"
 #include <vector>
 #include <array>
 #include <random>

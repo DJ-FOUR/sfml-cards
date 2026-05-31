@@ -31,6 +31,31 @@ constexpr sf::Color TEXT_DISABLED(85, 85, 85);
 constexpr sf::Color ENEMY_RED(255, 51, 51);
 constexpr sf::Color DARK_RED_BG(26, 10, 10);
 
+constexpr bool isTriggerSkill(int skillId) {
+    return skillId == 1 || skillId == 6 || skillId == 7;
+}
+
+// 绘制技能八角形图标框
+void drawOctagonIcon(sf::RenderWindow& window,
+    float iconX, float iconY, float iconSize,
+    sf::Color fillColor, sf::Color outlineColor, float outlineThickness = 1.f)
+{
+    float ic = iconSize * 0.15f;
+    sf::ConvexShape oct(8);
+    oct.setPoint(0, {iconX + ic, iconY});
+    oct.setPoint(1, {iconX + iconSize - ic, iconY});
+    oct.setPoint(2, {iconX + iconSize, iconY + ic});
+    oct.setPoint(3, {iconX + iconSize, iconY + iconSize - ic});
+    oct.setPoint(4, {iconX + iconSize - ic, iconY + iconSize});
+    oct.setPoint(5, {iconX + ic, iconY + iconSize});
+    oct.setPoint(6, {iconX, iconY + iconSize - ic});
+    oct.setPoint(7, {iconX, iconY + ic});
+    oct.setFillColor(fillColor);
+    oct.setOutlineColor(outlineColor);
+    oct.setOutlineThickness(outlineThickness);
+    window.draw(oct);
+}
+
 // 绘制切角矩形（八边形）
 void drawBeveledRect(sf::RenderWindow& window, float x, float y, float w, float h, float cut,
                      sf::Color fill, sf::Color outline, float outlineThick)
@@ -136,11 +161,6 @@ void drawCornerMarkers(sf::RenderWindow& window, float x, float y, float w, floa
 Renderer::Renderer(sf::RenderWindow& window)
     : m_window(window)
 {
-    m_passBtn.setFillColor(btnColor);
-    m_playBtn.setFillColor(btnColor);
-    m_returnBtn.setFillColor(btnColor);
-    for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
-        m_skillBtns[i].setFillColor(slotEmptyColor);
 }
 
 // ====== 动态尺度 ======
@@ -511,7 +531,7 @@ sf::FloatRect Renderer::skillCardRect(int idx, int total, sf::Vector2u winSize) 
     float w = (float)winSize.x;
     float h = (float)winSize.y;
     float ch = h * 0.42f;                       // 高度占窗口 42%
-    float cw = ch * 7.0f / 12.0f;               // 宽基于高 7:12 卡牌比例
+    float cw = ch * CARD_W / CARD_H;            // 宽基于高 7:12 卡牌比例
     float gap = w * 0.05f;
     float totalW = total * cw + (total - 1) * gap;
     float startX = (w - totalW) / 2.f;
@@ -566,20 +586,7 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     float iconSize = w * 0.30f;
     float iconX = x + (w - iconSize) / 2.f;
     float iconY = y + h * 0.08f;
-    float ic = iconSize * 0.15f;
-    sf::ConvexShape oct(8);
-    oct.setPoint(0, {iconX + ic, iconY});
-    oct.setPoint(1, {iconX + iconSize - ic, iconY});
-    oct.setPoint(2, {iconX + iconSize, iconY + ic});
-    oct.setPoint(3, {iconX + iconSize, iconY + iconSize - ic});
-    oct.setPoint(4, {iconX + iconSize - ic, iconY + iconSize});
-    oct.setPoint(5, {iconX + ic, iconY + iconSize});
-    oct.setPoint(6, {iconX, iconY + iconSize - ic});
-    oct.setPoint(7, {iconX, iconY + ic});
-    oct.setFillColor(sf::Color(10, 10, 10));
-    oct.setOutlineColor(BORDER_NORMAL);
-    oct.setOutlineThickness(1.f);
-    m_window.draw(oct);
+    drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), BORDER_NORMAL);
 
     sf::Text iconText(m_font, "S" + std::to_string(skillId + 1),
                       (unsigned)(iconSize * 0.38f));
@@ -605,7 +612,7 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     infoBar.setFillColor(sf::Color(5, 5, 5));
     m_window.draw(infoBar);
 
-    bool isTrigger = (skillId == 1 || skillId == 6 || skillId == 7);
+    bool isTrigger = isTriggerSkill(skillId);
     std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
     sf::Text costText(m_font, typeStr, (unsigned)(h * 0.032f));
     costText.setFillColor(sf::Color(136, 136, 136));
@@ -757,7 +764,7 @@ void Renderer::drawWildcardSelect(sf::Vector2u winSize, const sf::Vector2f& mous
 
     constexpr int RANK_COUNT = 13;
     float cardW = w * 0.055f;
-    float cardH = cardW * 150.f / 105.f;
+    float cardH = cardW * CARD_H / CARD_W;
     float gap = w * 0.015f;
     float totalW = RANK_COUNT * cardW + (RANK_COUNT - 1) * gap;
     float startX = (w - totalW) / 2.0f;
@@ -801,7 +808,7 @@ int Renderer::hitWildcardSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
 
     constexpr int RANK_COUNT = 13;
     float cardW = w * 0.055f;
-    float cardH = cardW * 150.f / 105.f;
+    float cardH = cardW * CARD_H / CARD_W;
     float gap = w * 0.015f;
     float totalW = RANK_COUNT * cardW + (RANK_COUNT - 1) * gap;
     float startX = (w - totalW) / 2.0f;
@@ -828,7 +835,7 @@ static TransitionPoolLayout calcTransitionPoolLayout(sf::Vector2u winSize)
     float w = (float)winSize.x;
     float h = (float)winSize.y;
     float cardH = h * 0.16f;                 // 竖版卡牌 7:12
-    float cardW = cardH * 7.0f / 12.0f;
+    float cardW = cardH * Renderer::CARD_W / Renderer::CARD_H;
     return {
         cardW, cardH,
         w * 0.06f,       // poolX
@@ -882,18 +889,6 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
 
     // 标题
     drawTitle(L"第 " + std::to_wstring(level) + L" 关", 0.05f, winSize);
-
-    // ---- 左侧: 已获得技能列表 ----
-    float leftX = w * 0.05f;
-    float listY = h * 0.18f;
-    float listW = w * 0.48f;
-    float itemH = h * 0.06f;
-    float itemGap = h * 0.01f;
-
-    sf::Text heading(m_font, L"已获得协议", (unsigned)(h * 0.032f));
-    heading.setFillColor(TEXT_DIM);
-    heading.setPosition({leftX, listY - h * 0.04f});
-    m_window.draw(heading);
 
     auto& allSkills = getAllSkills();
 
@@ -964,7 +959,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     // ---- 右侧: 装备槽 ----
     float rightX = w * 0.53f;
     float slotH = h * 0.20f;
-    float slotW = slotH * 7.0f / 12.0f;
+    float slotW = slotH * CARD_W / CARD_H;
     float slotGap = w * 0.03f;
     float slotStartY = h * 0.14f;
 
@@ -1008,7 +1003,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             slotText.setPosition({sx + (slotW - tsz.x) / 2.f, baseY + slotH * 0.22f});
             m_window.draw(slotText);
 
-            bool isTrigger = (drawSid == 1 || drawSid == 6 || drawSid == 7);
+            bool isTrigger = isTriggerSkill(drawSid);
             std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
             sf::Text cost(m_font, typeStr, (unsigned)(slotH * 0.12f));
             cost.setFillColor(TEXT_DIM);
@@ -1126,20 +1121,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         float iconSize = ghostW * 0.30f;
         float iconX = gx + (ghostW - iconSize) / 2.f;
         float iconY = gy + ghostH * 0.08f;
-        float ic = iconSize * 0.15f;
-        sf::ConvexShape oct(8);
-        oct.setPoint(0, {iconX + ic, iconY});
-        oct.setPoint(1, {iconX + iconSize - ic, iconY});
-        oct.setPoint(2, {iconX + iconSize, iconY + ic});
-        oct.setPoint(3, {iconX + iconSize, iconY + iconSize - ic});
-        oct.setPoint(4, {iconX + iconSize - ic, iconY + iconSize});
-        oct.setPoint(5, {iconX + ic, iconY + iconSize});
-        oct.setPoint(6, {iconX, iconY + iconSize - ic});
-        oct.setPoint(7, {iconX, iconY + ic});
-        oct.setFillColor(sf::Color(10, 10, 10, 210));
-        oct.setOutlineColor(sf::Color(204, 255, 0, 180));
-        oct.setOutlineThickness(1.f);
-        m_window.draw(oct);
+        drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10, 210), sf::Color(204, 255, 0, 180));
 
         sf::Text gIcon(m_font, L"S" + std::to_wstring(dragSkillId + 1),
                        (unsigned)(iconSize * 0.38f));
@@ -1168,7 +1150,7 @@ int Renderer::hitTransitionSlot(const sf::Vector2f& pos, sf::Vector2u winSize)
     float h = (float)winSize.y;
     float rightX = w * 0.53f;
     float slotH = h * 0.20f;
-    float slotW = slotH * 7.0f / 12.0f;
+    float slotW = slotH * CARD_W / CARD_H;
     float slotGap = w * 0.03f;
     float slotStartY = h * 0.14f;
 
@@ -1269,7 +1251,7 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
         m_window.draw(descText);
 
         // 技能类型
-        bool isTrigger = (hoveredSid == 1 || hoveredSid == 6 || hoveredSid == 7);
+        bool isTrigger = isTriggerSkill(hoveredSid);
         std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
         sf::Text costText(m_font, typeStr, (unsigned)(panelH * 0.14f));
         costText.setFillColor(sf::Color(150, 150, 150));
@@ -1573,20 +1555,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             float iconSize = skW * 0.28f;
             float iconX = sx + (skW - iconSize) / 2.f;
             float iconY = skY + skH * 0.10f;
-            float ic = iconSize * 0.15f;
-            sf::ConvexShape oct(8);
-            oct.setPoint(0, {iconX + ic, iconY});
-            oct.setPoint(1, {iconX + iconSize - ic, iconY});
-            oct.setPoint(2, {iconX + iconSize, iconY + ic});
-            oct.setPoint(3, {iconX + iconSize, iconY + iconSize - ic});
-            oct.setPoint(4, {iconX + iconSize - ic, iconY + iconSize});
-            oct.setPoint(5, {iconX + ic, iconY + iconSize});
-            oct.setPoint(6, {iconX, iconY + iconSize - ic});
-            oct.setPoint(7, {iconX, iconY + ic});
-            oct.setFillColor(sf::Color(10, 10, 10));
-            oct.setOutlineColor(BORDER_NORMAL);
-            oct.setOutlineThickness(1.f);
-            m_window.draw(oct);
+            drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), BORDER_NORMAL);
 
             sf::Text iconText(m_font, "S" + std::to_string(sid + 1),
                               (unsigned)(iconSize * 0.38f));
@@ -1606,7 +1575,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             m_window.draw(*m_skillBtnTexts[i]);
 
             // 技能类型标签
-            bool isTrigger = (sid == 1 || sid == 6 || sid == 7);
+            bool isTrigger = isTriggerSkill(sid);
             std::wstring info = isTrigger ? L"TRIG" : L"BUFF";
             sf::Text infoText(m_font, info, (unsigned)(skW * 0.20f));
             infoText.setFillColor(NEON_GREEN);
@@ -1656,7 +1625,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             et.setPosition({ex + (eskW - etsz.x) / 2.f, eskY + eskH * 0.20f});
             m_window.draw(et);
 
-            bool isTrigger = (esid == 1 || esid == 6 || esid == 7);
+            bool isTrigger = isTriggerSkill(esid);
             std::wstring typeStr = isTrigger ? L"TRIG" : L"BUFF";
             sf::Text costText(m_font, typeStr, (unsigned)(eskW * 0.20f));
             costText.setFillColor(sf::Color(200, 150, 150));

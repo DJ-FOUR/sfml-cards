@@ -1,4 +1,5 @@
 #include "run_state.hpp"
+#include "character.hpp"
 #include <algorithm>
 #include <random>
 

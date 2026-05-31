@@ -1,4 +1,6 @@
 #include "ai_memory.hpp"
+#include <algorithm>
+#include <cstdlib>
 
 // ----- 距离函数 -----
 

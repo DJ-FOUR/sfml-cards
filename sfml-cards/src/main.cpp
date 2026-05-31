@@ -5,11 +5,9 @@
 #include <cstdio>
 #include <string>
 
-#include "card.hpp"
 #include "game_state.hpp"
 #include "renderer.hpp"
 #include "skill.hpp"
-#include "character.hpp"
 #include "run_state.hpp"
 #include "ai_memory.hpp"
 
@@ -62,6 +60,21 @@ int main()
 
     // ---- 动画帧时间 ----
     sf::Clock animClock;
+
+    auto resetAndDealGame = [&]() {
+        game.setPlayerWildcard(run.wildcardRank());
+        game.dealCards(run.extraCards());
+        if (run.currentLevel() == 1)
+            game.setEnemySkills({-1, -1, -1});
+        else
+            game.setEnemySkills(run.mirroredSkills());
+        game.setAIMemory(&aiMemory);
+        selectedIndices.clear();
+        canPlaySelected = false;
+        aiTriggered = false;
+        aiClock.restart();
+        renderer.startDealAnimation((int)game.playerHand().size());
+    };
 
     while (window.isOpen())
     {
@@ -176,19 +189,7 @@ int main()
                         dragStartY = mw.y;
                     } else if (fightHit == 1) {
                         // 开始战斗
-                        game.setPlayerWildcard(run.wildcardRank());
-                        game.dealCards(run.extraCards());
-                        if (run.currentLevel() == 1) {
-                            game.setEnemySkills({-1, -1, -1});
-                        } else {
-                            game.setEnemySkills(run.mirroredSkills());
-                        }
-                        game.setAIMemory(&aiMemory);
-                        selectedIndices.clear();
-                        canPlaySelected = false;
-                        aiTriggered = false;
-                        aiClock.restart();
-                        renderer.startDealAnimation((int)game.playerHand().size());
+                        resetAndDealGame();
                         screen = Screen::Game;
                     } else if (fightHit == 9) {
                         aiMemory.clear();
@@ -273,18 +274,7 @@ int main()
             if (screen == Screen::Game) {
                 if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
                     if (key->code == sf::Keyboard::Key::R) {
-                        game.setPlayerWildcard(run.wildcardRank());
-                        game.dealCards(run.extraCards());
-                        if (run.currentLevel() == 1)
-                            game.setEnemySkills({-1, -1, -1});
-                        else
-                            game.setEnemySkills(run.mirroredSkills());
-                        game.setAIMemory(&aiMemory);
-                        selectedIndices.clear();
-                        canPlaySelected = false;
-                        aiClock.restart();
-                        aiTriggered = false;
-                        renderer.startDealAnimation((int)game.playerHand().size());
+                        resetAndDealGame();
                     }
                 }
 

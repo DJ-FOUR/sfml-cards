@@ -30,15 +30,10 @@ struct Card
     Rank rank; // 点数
     int  imageIndex = 0; // 0-53 对应 card{idx}.png
 
-    bool operator<(const Card& other) const
-    {
-        return doudizhuOrder(rank) < doudizhuOrder(other.rank);
-    }
     bool operator==(const Card& other) const
     {
         return rank == other.rank && suit == other.suit;
     }
-    bool operator!=(const Card& other) const { return !(*this == other); }
 };
 
 constexpr int DECK_SIZE = 54;

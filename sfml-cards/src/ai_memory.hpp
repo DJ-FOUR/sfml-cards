@@ -3,9 +3,6 @@
 #include <vector>
 #include <deque>
 #include <unordered_map>
-#include <algorithm>
-#include <cmath>
-#include <cstdint>
 
 // 出牌决策的特征向量
 struct PlayFeatures
@@ -59,7 +56,6 @@ public:
 
 private:
     static constexpr size_t MAX_PLAY_RECORDS = 2000;
-    static constexpr int    K_DEFAULT = 5;
 
     // 出牌记忆: (特征, 动作) 对
     std::deque<std::pair<PlayFeatures, PlayAction>> m_playRecords;
