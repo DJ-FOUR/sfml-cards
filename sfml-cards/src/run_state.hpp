@@ -35,6 +35,10 @@ public:
     // 随机获取3个可选技能 (用于奖励界面)
     std::vector<int> rollRewardSkills();
 
+    // 癞子点数 (谋略家被动技, -1=无)
+    int  wildcardRank() const { return m_wildcardRank; }
+    void setWildcardRank(int r) { m_wildcardRank = r; }
+
 private:
     int  m_level = 1;
     int  m_charId = 0;
@@ -42,6 +46,8 @@ private:
     std::vector<int>          m_acquired;   // 已获得技能id列表
     std::array<int, MAX_SKILL_SLOTS> m_equipped = {-1, -1, -1};
     std::array<int, MAX_SKILL_SLOTS> m_mirroredSkills = {-1, -1, -1};
+
+    int m_wildcardRank = -1;  // 癞子点数, -1=无 (谋略家被动)
 
     std::mt19937 m_rng;
 };

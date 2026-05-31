@@ -739,6 +739,82 @@ int Renderer::hitCharacterSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
     return 0;
 }
 
+// ====== 癞子点数选择 (谋略家被动) ======
+
+namespace {
+const wchar_t* WILDCARD_RANK_NAMES[13] = {
+    L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"10", L"J", L"Q", L"K", L"A", L"2"
+};
+}
+
+void Renderer::drawWildcardSelect(sf::Vector2u winSize, const sf::Vector2f& mousePos)
+{
+    drawBackground(winSize);
+    drawTitle(L"选择癞子点数", 0.06f, winSize);
+
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+
+    constexpr int RANK_COUNT = 13;
+    float cardW = w * 0.055f;
+    float cardH = cardW * 150.f / 105.f;
+    float gap = w * 0.015f;
+    float totalW = RANK_COUNT * cardW + (RANK_COUNT - 1) * gap;
+    float startX = (w - totalW) / 2.0f;
+    float baseY = h * 0.38f;
+
+    for (int i = 0; i < RANK_COUNT; ++i) {
+        float cx = startX + i * (cardW + gap);
+        sf::FloatRect cardRect({cx, baseY}, {cardW, cardH});
+        bool hover = cardRect.contains(mousePos);
+
+        float curS = hover ? 1.12f : 1.0f;
+        float curW = cardW * curS;
+        float curH = cardH * curS;
+        float curX = cx + (cardW - curW) / 2.0f;
+        float curY = baseY + (cardH - curH) / 2.0f + (hover ? -h * 0.025f : 0.0f);
+
+        sf::Color fill = hover ? sf::Color(20, 30, 10) : sf::Color(13, 13, 13);
+        sf::Color outline = hover ? NEON_GREEN : BORDER_NORMAL;
+        drawBeveledRect(m_window, curX, curY, curW, curH, 6.f, fill, outline, hover ? 2.f : 1.f);
+
+        sf::Text rankText(m_font, WILDCARD_RANK_NAMES[i], (unsigned)(curH * 0.42f));
+        rankText.setFillColor(hover ? NEON_GREEN : sf::Color(220, 220, 220));
+        rankText.setStyle(sf::Text::Bold);
+        auto tsz = rankText.getGlobalBounds().size;
+        rankText.setPosition({curX + (curW - tsz.x) / 2.0f, curY + (curH - tsz.y) / 2.0f});
+        m_window.draw(rankText);
+    }
+
+    // 底部提示
+    sf::Text hint(m_font, L"选择一张点数作为癞子牌（万能牌）", (unsigned)(h * 0.03f));
+    hint.setFillColor(sf::Color(160, 160, 160));
+    auto hsz = hint.getGlobalBounds().size;
+    hint.setPosition({(w - hsz.x) / 2.0f, baseY + cardH + h * 0.06f});
+    m_window.draw(hint);
+}
+
+int Renderer::hitWildcardSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+
+    constexpr int RANK_COUNT = 13;
+    float cardW = w * 0.055f;
+    float cardH = cardW * 150.f / 105.f;
+    float gap = w * 0.015f;
+    float totalW = RANK_COUNT * cardW + (RANK_COUNT - 1) * gap;
+    float startX = (w - totalW) / 2.0f;
+    float baseY = h * 0.38f;
+
+    for (int i = 0; i < RANK_COUNT; ++i) {
+        float cx = startX + i * (cardW + gap);
+        if (sf::FloatRect({cx, baseY}, {cardW, cardH}).contains(pos))
+            return i;  // 返回 doudizhuOrder 值 0-12
+    }
+    return -1;
+}
+
 // ====== 关卡过渡 (装备技能) ======
 
 void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos,
@@ -1732,6 +1808,18 @@ void Renderer::renderGame(const GameState& state,
             sprite.setPosition({bcx, bcy});
             sprite.setRotation(sf::degrees(fanRot));
             m_window.draw(sprite);
+
+            // 癞子牌金色标记
+            if (state.playerBuffs().wildcardRank >= 0
+                && doudizhuOrder(ph[i].rank) == state.playerBuffs().wildcardRank) {
+                sf::Sprite wglow(it->second);
+                wglow.setOrigin({CARD_W / 2.0f, CARD_H});
+                wglow.setScale({hs * 1.03f, hs * 1.03f});
+                wglow.setPosition({bcx, bcy});
+                wglow.setRotation(sf::degrees(fanRot));
+                wglow.setColor(sf::Color(255, 190, 30, 80));
+                m_window.draw(wglow);
+            }
 
             if (sel) {
                 // 荧光绿 overlay

@@ -11,9 +11,14 @@ constexpr int STANDARD_DEAL = 15;
 
 // ----- helpers -----
 
-static void sortByDZ(std::vector<Card>& cards)
+static void sortByDZ(std::vector<Card>& cards, int wildcardRank = -1)
 {
-    std::sort(cards.begin(), cards.end(), [](const Card& a, const Card& b) {
+    std::sort(cards.begin(), cards.end(), [wildcardRank](const Card& a, const Card& b) {
+        if (wildcardRank >= 0) {
+            bool aWild = (doudizhuOrder(a.rank) == wildcardRank);
+            bool bWild = (doudizhuOrder(b.rank) == wildcardRank);
+            if (aWild != bWild) return aWild;
+        }
         return doudizhuOrder(a.rank) > doudizhuOrder(b.rank);
     });
 }
@@ -28,10 +33,192 @@ static int findCardOfRank(const std::vector<Card>& hand, int dzRank,
     return -1;
 }
 
-// ----- classifyHand (支持技能buff) -----
-// 外部调用版本
+// ----- classifyHand (支持技能buff + 癞子) -----
+
+// 检查能否用 freq + wildcards 组成指定长度的顺子(每rank≥1张)
+static bool canFormStraight(int startRank, int length, const std::array<int,15>& freq, int wilds)
+{
+    int need = 0;
+    for (int r = startRank; r < startRank + length; ++r) {
+        if (r > RA) return false;
+        if (freq[r] == 0) need++;
+        else if (freq[r] > 1) return false;
+    }
+    return need <= wilds;
+}
+
+// 检查能否用 freq + wildcards 组成指定长度的连对(每rank≥2张)
+static bool canFormPairs(int startRank, int length, const std::array<int,15>& freq, int wilds)
+{
+    int need = 0;
+    for (int r = startRank; r < startRank + length; ++r) {
+        if (r > RA) return false;
+        if (freq[r] > 2) return false;
+        need += std::max(0, 2 - freq[r]);
+    }
+    return need <= wilds;
+}
+
+// 检查能否用 freq + wildcards 组成指定长度的飞机(每rank≥3张)
+static bool canFormAirplane(int startRank, int length, const std::array<int,15>& freq, int wilds)
+{
+    int need = 0;
+    for (int r = startRank; r < startRank + length; ++r) {
+        if (r > R2) return false;
+        if (freq[r] > 3) { need += freq[r] - 3; }
+        need += std::max(0, 3 - freq[r]);
+    }
+    return need <= wilds;
+}
+
 std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& cards,
                                                      const SkillBuffs* buffs)
+{
+    int n = (int)cards.size();
+    if (n == 0) return std::nullopt;
+
+    // 分离癞子牌
+    int wildRank = (buffs && buffs->wildcardRank >= 0) ? buffs->wildcardRank : -1;
+    int wildCount = 0;
+    std::array<int, DZ_RANKS> freq{};
+    for (auto& c : cards) {
+        int r = doudizhuOrder(c.rank);
+        if (wildRank >= 0 && r == wildRank)
+            wildCount++;
+        else
+            freq[r]++;
+    }
+    // 无癞子时走快速路径（原逻辑）
+    if (wildCount == 0) {
+        return classifyHandNoWild(cards, buffs);
+    }
+
+    // Rocket (大小王不能由癞子替代)
+    if (n == 2 && freq[RS] == 1 && freq[RB] == 1)
+        return HandPattern{HandType::Rocket, RB, 0, 0};
+
+    // Single
+    if (n == 1) {
+        if (wildCount == 1) return HandPattern{HandType::Single, wildRank, 0, 0};
+        for (int r = 0; r < DZ_RANKS; ++r)
+            if (freq[r]) return HandPattern{HandType::Single, r, 0, 0};
+    }
+
+    // Pair: freq[r] + wildCount >= 2
+    if (n == 2) {
+        if (wildCount == 2) return HandPattern{HandType::Pair, wildRank, 0, 0};
+        for (int r = 0; r < DZ_RANKS; ++r) {
+            if (freq[r] + wildCount >= 2)
+                return HandPattern{HandType::Pair, r, 0, 0};
+        }
+        return std::nullopt;
+    }
+
+    // Bomb: freq[r] + wildCount >= 4
+    if (n == 4) {
+        if (wildCount == 4) return HandPattern{HandType::Bomb, wildRank, 0, 0};
+        for (int r = 0; r < DZ_RANKS; ++r) {
+            if (freq[r] + wildCount >= 4)
+                return HandPattern{HandType::Bomb, r, 0, 0};
+        }
+    }
+
+    // Triple / Triple+1 / Triple+2
+    bool extra = buffs && buffs->tripleExtraKicker;
+    if (n == 3 || n == 4 || n == 5 || (extra && n == 6)) {
+        if (n == 3 && wildCount == 3)
+            return HandPattern{HandType::Triple, wildRank, 0, 0};
+        for (int r = 0; r < DZ_RANKS; ++r) {
+            int wUsed = std::max(0, 3 - freq[r]);
+            if (freq[r] + wildCount < 3) continue;
+            int restW = wildCount - wUsed;
+            int rest = n - 3;
+            if (rest == 0)
+                return HandPattern{HandType::Triple, r, 0, 0};
+            // 有剩余癞子时可作 kicker
+            if (restW > 0 || extra) {
+                if (rest == 1)
+                    return HandPattern{HandType::TriplePlusOne, r, 0, 1};
+                if (rest == 2) {
+                    bool hasPair = false;
+                    for (int k = 0; k < DZ_RANKS; ++k)
+                        if (k != r && freq[k] + (k == wildRank ? restW : 0) >= 2)
+                            { hasPair = true; break; }
+                    if (hasPair)
+                        return HandPattern{HandType::TriplePlusTwo, r, 0, 2};
+                    if (extra)
+                        return HandPattern{HandType::TriplePlusOne, r, 0, 2};
+                }
+                if (rest == 3 && extra)
+                    return HandPattern{HandType::TriplePlusOne, r, 0, 3};
+            }
+            return std::nullopt;
+        }
+    }
+
+    // Straight (顺子): 使用癞子填补缺口
+    int minSLen = (buffs && buffs->straightExtended) ? 4 : 5;
+    if (n >= minSLen && n <= (RA - R3 + 1)) {
+        for (int start = R3; start + n - 1 <= RA; ++start) {
+            if (canFormStraight(start, n, freq, wildCount))
+                return HandPattern{HandType::Straight, start + n - 1, n, 0};
+        }
+    }
+
+    // ConsecutivePairs (连对): 使用癞子填补
+    int minPLen = (buffs && buffs->pairsExtended) ? 2 : 3;
+    if (n >= minPLen * 2 && n % 2 == 0) {
+        int pairLen = n / 2;
+        for (int start = R3; start + pairLen - 1 <= RA; ++start) {
+            if (canFormPairs(start, pairLen, freq, wildCount))
+                return HandPattern{HandType::ConsecutivePairs, start + pairLen - 1, pairLen, 0};
+        }
+    }
+
+    // Airplane (飞机): 使用癞子填补
+    int minALen = (buffs && buffs->airplaneExtended) ? 1 : 2;
+    if (n >= minALen * 3) {
+        for (int use = n / 3; use >= minALen; --use) {
+            int tripleCards = use * 3;
+            int remain = n - tripleCards;
+            for (int start = R3; start + use - 1 <= R2; ++start) {
+                if (!canFormAirplane(start, use, freq, wildCount))
+                    continue;
+
+                // 计算使用癞子后剩余的癞子数
+                int wUsed = 0;
+                for (int t = 0; t < use; ++t)
+                    wUsed += std::max(0, 3 - freq[start + t]);
+                int restW = wildCount - wUsed;
+
+                if (remain == 0)
+                    return HandPattern{HandType::Airplane, start + use - 1, use, 0};
+                if (remain == use)  // 带单
+                    return HandPattern{HandType::Airplane, start + use - 1, use, use};
+                if (remain == use * 2) {  // 带对
+                    auto f = freq;
+                    for (int t = 0; t < use; ++t)
+                        f[start + t] = std::max(0, f[start + t] - 3);
+                    f[wildRank] += restW;
+                    int pairCnt = 0;
+                    bool bad = false;
+                    for (int r = 0; r < DZ_RANKS; ++r) {
+                        if (f[r] == 2) pairCnt++;
+                        else if (f[r] != 0) { bad = true; break; }
+                    }
+                    if (!bad && pairCnt == use)
+                        return HandPattern{HandType::Airplane, start + use - 1, use, use * 2};
+                }
+            }
+        }
+    }
+
+    return std::nullopt;
+}
+
+// 无癞子快速路径（保持原逻辑）
+std::optional<HandPattern> GameState::classifyHandNoWild(const std::vector<Card>& cards,
+                                                           const SkillBuffs* buffs)
 {
     int n = (int)cards.size();
     if (n == 0) return std::nullopt;
@@ -64,8 +251,6 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
     }
 
     // Triple / Triple+1 / Triple+2
-    // S05: tripleExtraKicker allows triple+1 to carry 2 singles (n=5, kicker=2)
-    //      and triple+2 to carry 2 pairs + 1 single (n=6, kicker=3)
     bool extra = buffs && buffs->tripleExtraKicker;
 
     if (n == 3 || n == 4 || n == 5 || (extra && n == 6)) {
@@ -77,25 +262,21 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
             if (rest == 1)
                 return HandPattern{HandType::TriplePlusOne, r, 0, 1};
             if (rest == 2) {
-                // check if rest is a pair (normal) or 2 singles (with extra kicker)
                 bool hasPair = false;
                 for (int k = 0; k < DZ_RANKS; ++k)
                     if (k != r && freq[k] == 2) { hasPair = true; break; }
                 if (hasPair)
                     return HandPattern{HandType::TriplePlusTwo, r, 0, 2};
                 if (extra)
-                    return HandPattern{HandType::TriplePlusOne, r, 0, 2}; // extra single
+                    return HandPattern{HandType::TriplePlusOne, r, 0, 2};
             }
-            if (rest == 3 && extra) {
-                // triple + 3 singles (with extra kicker)
+            if (rest == 3 && extra)
                 return HandPattern{HandType::TriplePlusOne, r, 0, 3};
-            }
             return std::nullopt;
         }
-        // 没有三条 → 不返回, 继续检查顺子等牌型
     }
 
-    // Straight: 默认≥5, S03 straightExtended → ≥4
+    // Straight
     int minSLen = (buffs && buffs->straightExtended) ? 4 : 5;
     if (n >= minSLen) {
         bool ok = true;
@@ -109,7 +290,7 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
             return HandPattern{HandType::Straight, maxR, n, 0};
     }
 
-    // ConsecutivePairs: 默认≥3, S04 pairsExtended → ≥2
+    // ConsecutivePairs
     int minPLen = (buffs && buffs->pairsExtended) ? 2 : 3;
     if (n >= minPLen * 2 && n % 2 == 0) {
         std::vector<int> pairRanks;
@@ -128,7 +309,7 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
         }
     }
 
-    // Airplane: 默认≥2, S06 airplaneExtended → ≥1
+    // Airplane
     int minALen = (buffs && buffs->airplaneExtended) ? 1 : 2;
     if (n >= minALen * 3) {
         std::vector<int> tripleRanks;
@@ -144,14 +325,12 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
                 for (int use = k; use >= minALen; --use) {
                     int tripleCards = use * 3;
                     int remain = n - tripleCards;
-                    if (remain == 0) {
+                    if (remain == 0)
                         return HandPattern{HandType::Airplane,
                                            tripleRanks[i + use - 1], use, 0};
-                    }
-                    if (remain == use) {
+                    if (remain == use)
                         return HandPattern{HandType::Airplane,
                                            tripleRanks[i + use - 1], use, use};
-                    }
                     if (remain == use * 2) {
                         auto f = freq;
                         for (int t = 0; t < use; ++t)
@@ -222,7 +401,7 @@ void GameState::dealCards(int extraCards)
     m_computerHand.assign(deck.begin() + deal, deck.begin() + deal + STANDARD_DEAL);
     // 剩余牌放入抽牌堆
     m_drawPile.assign(deck.begin() + deal + STANDARD_DEAL, deck.end());
-    sortByDZ(m_playerHand);
+    sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
     sortByDZ(m_computerHand);
 
     m_lastPlay.reset();
@@ -397,7 +576,7 @@ void GameState::drawCards(int count)
         m_playerHand.push_back(m_drawPile.back());
         m_drawPile.pop_back();
     }
-    sortByDZ(m_playerHand);
+    sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
 }
 
 std::vector<int> GameState::findBombInHand() const
