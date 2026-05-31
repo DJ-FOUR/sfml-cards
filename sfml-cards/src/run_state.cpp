@@ -41,8 +41,12 @@ void RunState::addSkill(int id)
 
 void RunState::equipSkill(int slotIdx, int skillId)
 {
-    if (slotIdx >= 0 && slotIdx < MAX_SKILL_SLOTS)
-        m_equipped[slotIdx] = skillId;
+    if (slotIdx < 0 || slotIdx >= MAX_SKILL_SLOTS) return;
+    // 防止同一技能出现在多个槽位
+    for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
+        if (i != slotIdx && m_equipped[i] == skillId)
+            m_equipped[i] = -1;
+    m_equipped[slotIdx] = skillId;
 }
 
 void RunState::unequipSlot(int slotIdx)
@@ -57,6 +61,20 @@ int RunState::equippedCount() const
     for (int id : m_equipped)
         if (id >= 0) ++n;
     return n;
+}
+
+int RunState::equippedSlotOf(int skillId) const
+{
+    for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
+        if (m_equipped[i] == skillId)
+            return i;
+    return -1;
+}
+
+void RunState::swapSlots(int a, int b)
+{
+    if (a >= 0 && a < MAX_SKILL_SLOTS && b >= 0 && b < MAX_SKILL_SLOTS)
+        std::swap(m_equipped[a], m_equipped[b]);
 }
 
 std::vector<int> RunState::rollRewardSkills()

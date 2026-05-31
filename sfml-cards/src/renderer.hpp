@@ -50,11 +50,16 @@ public:
     void drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                         int level, const std::vector<int>& acquiredSkills,
                         const std::array<int, MAX_SKILL_SLOTS>& equipped,
-                        int hoveredAcquiredIdx, int hoveredSlotIdx);
-    int  hitTransitionSkill(const sf::Vector2f& pos, sf::Vector2u winSize,
-                            int acquiredCount, int equippedCount);
+                        int hoveredAcquiredIdx, int hoveredSlotIdx,
+                        int dragSourceType, int dragSourceIndex,
+                        int dragSkillId, bool isDragging);
     int  hitTransitionSlot(const sf::Vector2f& pos, sf::Vector2u winSize);
     int  hitTransitionFight(const sf::Vector2f& pos, sf::Vector2u winSize);
+    // 卡池命中检测
+    int  hitTransitionPoolCard(const sf::Vector2f& pos, sf::Vector2u winSize,
+                               int acquiredCount);
+    bool hitTransitionPool(const sf::Vector2f& pos, sf::Vector2u winSize);
+    sf::FloatRect transitionPoolCardRect(int cardIndex, sf::Vector2u winSize) const;
 
     // ---- 奖励界面 (过关后选技能) ----
     void drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,

@@ -1,10 +1,11 @@
+<!-- AGENTS.md for 斗牌Rogue -->
 # 斗牌Rogue — SFML 卡牌游戏
 
 ## 项目概述
 
 本项目是一个基于 **C++17 + SFML 3.0.2** 开发的单机斗地主肉鸽卡牌对战游戏，游戏名为 **斗牌Rogue**。
 
-核心玩法为无尽闯关（Endless Run）：玩家选择角色后进入第1关，与镜像AI对战。每关双方各发15张牌（掌控者角色有额外+2张），轮流出牌，先清空手牌者获胜。选择角色后先从3个随机技能中选1个初始技能，过关后再次从3个随机技能中选1个获得。每关开始前可装备最多3个技能。从第2关起，敌人会自动装备玩家上一关实际使用的技能（镜像机制）。
+核心玩法为无尽闯关（Endless Run）：玩家选择角色后进入第1关，与镜像AI对战。每关双方各发15张牌（部分角色有额外手牌），轮流出牌，先清空手牌者获胜。选择角色后先从3个随机技能中选1个初始技能，过关后再次从3个随机技能中选1个获得。每关开始前可装备最多3个技能。从第2关起，敌人会自动装备玩家上一关实际使用的技能（镜像机制）。AI还会通过学习玩家在历史对局中的出牌习惯和技能使用频率来模仿玩家行为。
 
 所有UI文本、代码注释、模块文档均使用**中文**。
 
@@ -21,6 +22,8 @@
 | IDE | VS Code（已配置 tasks / launch / c_cpp_properties） |
 | 平台 | primarily Windows（存档模块含 Linux/Mac 兼容分支） |
 
+无 `package.json`、`pyproject.toml`、`Cargo.toml` 等其他语言生态的配置文件。本项目为纯 C++ 项目。
+
 ---
 
 ## 关键配置文件
@@ -32,8 +35,6 @@
 | `.vscode/launch.json` | VS Code 调试配置：gdb 调试 `build/main.exe`，预执行构建任务 |
 | `.vscode/c_cpp_properties.json` | IntelliSense 配置：包含路径、编译器路径、C++17 标准 |
 
-无 `package.json`、`pyproject.toml`、`Cargo.toml` 等其他语言生态的配置文件。本项目为纯 C++ 项目。
-
 ---
 
 ## 项目结构
@@ -41,11 +42,12 @@
 ```
 src/
 ├── card.hpp / card.cpp              # 卡牌数据模型：Suit、Rank、Card 结构体、洗牌
-├── game_state.hpp / game_state.cpp  # 核心规则：牌型识别、大小比较、回合管理、AI、技能Buff
+├── game_state.hpp / game_state.cpp  # 核心规则：牌型识别、大小比较、回合管理、AI逻辑、技能Buff
 ├── renderer.hpp / renderer.cpp      # 全部渲染与鼠标点击检测（所有界面 + 游戏）
 ├── skill.hpp / skill.cpp            # 技能数据定义（8个技能）与回合Buff结构体
-├── character.hpp / character.cpp    # 3个角色定义及其被动技
+├── character.hpp / character.cpp    # 3个角色定义（仅影响初始手牌数）
 ├── run_state.hpp / run_state.cpp    # Run全局状态：关卡进度、技能获取/装备、镜像继承
+├── ai_memory.hpp / ai_memory.cpp    # AI学习系统：k-NN出牌 mimicry + 技能使用概率跟踪
 ├── save.hpp / save.cpp              # 3槽位文本存档读写（当前未接入主循环）
 └── main.cpp                         # 入口、主循环、Screen状态机、事件路由
 
@@ -59,7 +61,7 @@ resources/
 └── tuffy.ttf                        # 备用字体（当前未使用）
 
 SFML-3.0.2/                          # 捆绑的 SFML 静态库（include/ + lib/ + bin/）
-build/                               # CMake 构建输出（含 main.exe、资源副本、MinGW DLL）
+build/                               # CMake 构建输出（含 main.exe、资源副本）
 dist/                                # 独立发布包
 ```
 
@@ -82,11 +84,11 @@ cmake --build build --config Debug
 
 构建产物为 `build/main.exe`。CMake 会自动将 `images/` 和 `resources/` 复制到构建输出目录，确保 exe 双击即可运行。
 
-**注意**：尽管 CMake 中设置了 `-static` 和 `SFML_STATIC`，构建输出目录中仍可能出现 `libgcc_s_seh-1.dll`、`libstdc++-6.dll`、`libwinpthread-1.dll` 等 MinGW 运行时 DLL。若需完全单文件分发，需确认静态链接 flags 实际生效。
+**注意**：CMake 中设置了 `-static` 和 `SFML_STATIC`，链接的是带 `-s` 后缀的静态库。但构建输出目录中仍可能出现 `libgcc_s_seh-1.dll`、`libstdc++-6.dll`、`libwinpthread-1.dll` 等 MinGW 运行时 DLL。若需完全单文件分发，需确认静态链接 flags 实际生效。
 
 ### 发布目录
 
-`dist/` 目录下已有独立可执行文件及其依赖资源，可直接分发。
+`dist/` 目录下已有独立可执行文件及其依赖资源，可直接分发。**注意**：`dist/resources/` 目前缺少 `simsun.ttc`，若发现中文显示异常，需手动复制该字体文件。
 
 ---
 
@@ -101,8 +103,9 @@ main.cpp
   │     ├── card.hpp/cpp  — 卡牌数据模型、创建牌组、图片索引映射
   │     └── skill.hpp/cpp — 技能定义（8个）+ SkillBuffs 结构体
   ├── run_state.hpp/cpp   — Run 级状态：关卡数、已获得技能、装备槽、镜像快照
-  │     ├── character.hpp/cpp — 3 个角色定义及被动技
+  │     ├── character.hpp/cpp — 3 个角色定义
   │     └── skill.hpp/cpp
+  ├── ai_memory.hpp/cpp   — AI 学习记忆（k-NN + 技能使用统计）
   └── save.hpp/cpp        — 3 槽位文本存档（保留，未接入主循环）
 ```
 
@@ -122,36 +125,40 @@ main.cpp
 
 ### `skill` 模块
 
-- `SkillDef`：技能定义结构体（id、`std::wstring` 名称/描述、能量消耗、冷却回合）。
-- `SKILL_COUNT = 8`，`MAX_SKILL_SLOTS = 3`，`MAX_ENERGY = 10`，`START_ENERGY = 3`。
+- `SkillDef`：技能定义结构体（id、`std::wstring` 名称/描述）。**当前版本无能量消耗、无冷却回合**。
+- `SKILL_COUNT = 8`，`MAX_SKILL_SLOTS = 3`。
 - `SkillBuffs`：当前回合生效的技能效果结构体（`bombBoosted`, `bombRankBonus=3`, `straightExtended`, `pairsExtended`, `tripleExtraKicker`, `airplaneExtended`）。
 - `getAllSkills()` 返回静态技能数组。
 
 当前已实现的8个技能（S01~S08）：
 
-| ID | 名称 | 效果 | 能量 | 冷却 |
-|----|------|------|------|------|
-| 0 | 炸弹强化 | 本回合炸弹视为更大炸弹（+3级），可压过同级炸弹 | 2 | 2 |
-| 1 | 火箭冲刺 | 打出火箭时额外抽3张牌 | 1 | 3 |
-| 2 | 顺子延长 | 顺子最低长度-1（4张即可出） | 3 | 3 |
-| 3 | 连对增幅 | 连对最低组数-1（2组即可出） | 2 | 3 |
-| 4 | 三带一强化 | 三带一/三带二可额外多带一张单牌 | 2 | 1 |
-| 5 | 飞机连射 | 飞机最低组数-1（1组即可出） | 3 | 3 |
-| 6 | 炸弹馈赠 | 打出炸弹后回复2点能量 | 1 | 2 |
-| 7 | 连环炸弹 | 出牌后若手中有炸弹自动打出（限1次） | 4 | 4 |
+| ID | 名称 | 效果 |
+|----|------|------|
+| 0 | 炸弹强化 | 本回合炸弹视为更大炸弹（+3级），可压过同级炸弹 |
+| 1 | 火箭冲刺 | 打出火箭时额外抽3张牌 |
+| 2 | 顺子延长 | 顺子最低长度-1（4张即可出） |
+| 3 | 连对增幅 | 连对最低组数-1（2组即可出） |
+| 4 | 三带一强化 | 三带一/三带二可额外多带一张单牌 |
+| 5 | 飞机连射 | 飞机最低组数-1（1组即可出） |
+| 6 | 炸弹馈赠 | 打出炸弹后额外抽1张牌 |
+| 7 | 连环炸弹 | 出牌后若手中有炸弹自动打出（限1次） |
+
+**注意**：技能在战斗内是“本回合生效”的BUFF类型（除S01/S07/S08为触发标记）。点击技能槽即激活，无能量限制，无冷却限制。敌人AI则根据学习到的玩家使用概率决定是否激活技能（阈值 0.4）。
 
 ### `character` 模块
 
-- `CharacterDef`：角色定义（id、`std::wstring` 名称/被动技名称/描述、额外手牌数、额外能量、是否首切无冷却）。
+- `CharacterDef`：角色定义（id、`std::wstring` 名称/被动技名称/描述、`extraCards` 额外手牌数）。
 - `CHAR_COUNT = 3`。
 
 三个角色：
 
 | ID | 名称 | 被动技 | 效果 |
 |----|------|--------|------|
-| 0 | 争锋者 | 强袭 | 每回合首次出牌额外+1能量 |
-| 1 | 谋略家 | 谋定 | 每关首次切换技能无冷却 |
-| 2 | 掌控者 | 储备 | 手牌上限+2（初始17张而非15张） |
+| 0 | 争锋者 | 强袭 | 手牌上限+1（初始16张） |
+| 1 | 谋略家 | 谋定 | 手牌上限不变 |
+| 2 | 掌控者 | 储备 | 手牌上限+2（初始17张） |
+
+**注意**：当前版本角色效果仅影响初始发牌数量，无其他战斗内被动效果。
 
 ### `run_state` 模块
 
@@ -160,7 +167,6 @@ main.cpp
 - `rollRewardSkills()`：从8个技能中随机选出3个作为过关奖励（允许重复出现已拥有技能，UI会标记"已拥有"）。
 - `mirroredSkills()`：返回当前已装备技能，供下一关敌人继承。
 - `startNewRun()` / `advanceToNextLevel()`：Run生命周期管理。进入下一关时快照当前装备技能到 `m_mirroredSkills`。
-- 谋略家被动通过 `m_firstSwitchFree` 标志实现。
 
 ### `game_state` 模块
 
@@ -169,13 +175,20 @@ main.cpp
 - `classifyHand()` 静态方法：识别一组牌是什么牌型，支持 `SkillBuffs` 修正规则（如顺子长度-1）。
 - `beats()` 静态方法：比较两手牌大小，支持炸弹强化加成（`bombRankBonus = 3`）。
 - `playerPlay()` / `playerPass()`：玩家出牌/不出。
-- `computerTakeTurn()`：AI决策。跟牌时优先出最小非炸弹；自由出牌时出最小单张；手牌≤4时才考虑炸弹/火箭。
-- `activatePlayerSkill()`：玩家激活装备槽中的技能（消耗能量，进入冷却）。
-- `enemyActivateSkills()`：敌人回合开始时自动激活其继承的技能（敌人不消耗能量）。
-- 能量系统：玩家每回合开始时+1能量（争锋者首次出牌再+1），技能消耗能量，上限10。
-- 冷却系统：每回合开始时所有冷却中的技能CD-1。
-- `applyPostPlayEffects()`：处理打出后的触发效果（S02抽牌、S07回能、S08连环炸弹）。
-- 标准发牌数 `STANDARD_DEAL = 15`（game_state.cpp 匿名命名空间）。
+- `computerTakeTurn()`：AI决策。跟牌时优先出最小非炸弹；自由出牌时出最小单张；手牌≤4时才考虑炸弹/火箭。AI还会根据 `AIMemory` 中的 k-NN 查询结果模仿玩家的出牌偏好。
+- `activatePlayerSkill()`：玩家激活装备槽中的技能（**无能量消耗，无冷却**）。
+- `enemyActivateSkills()`：敌人回合开始时自动激活其继承的技能，激活概率由 `AIMemory::querySkillProb()` 决定（≥0.4 才激活）。
+- `applyPostPlayEffects()`：处理打出后的触发效果（S01火箭抽牌、S06炸弹抽牌、S08连环炸弹）。
+- 标准发牌数 `STANDARD_DEAL = 15`（game_state.cpp 匿名命名空间），角色额外手牌通过 `dealCards(int extraCards)` 传入。
+- `setAIMemory()` 注入 `AIMemory` 指针，用于记录玩家行为和学习。
+
+### `ai_memory` 模块
+
+- `AIMemory`：AI 学习记忆系统，被 `GameState` 和 `main.cpp` 共同使用。
+- **出牌学习**：记录玩家每次出牌/不出时的 `PlayFeatures`（手牌数、是否新一轮、上一手牌型/牌力、是否有炸弹/火箭、关卡数）和 `PlayAction`（出的牌型/牌力/张数、是否不出）。采用 k-NN（k=5）按距离反比加权查询最相似历史记录。
+- **技能学习**：记录玩家使用各技能的次数。`querySkillProb(skillId)` 返回该技能使用次数 / 最大使用次数（0.0~1.0）。若玩家从未用过某技能，AI 也不用。
+- 最大记录数 `MAX_PLAY_RECORDS = 2000`，超出时丢弃最旧记录。
+- `clear()`：玩家死亡/返回主菜单时清空记忆。
 
 ### `renderer` 模块
 
@@ -184,10 +197,10 @@ main.cpp
 - **扇形手牌**：相邻牌重叠约65%，自动居中。选中的牌会抬起 `h*0.05`。
 - 提供各界面的 `draw*` 与 `hit*`（点击检测）函数对。
 - 渲染的界面包括：
-  - `drawMainMenu` / `hitMainMenu`：主菜单（开始游戏、选择角色、退出）
+  - `drawMainMenu` / `hitMainMenu`：主菜单（开始游戏、退出）
   - `drawCharacterSelect` / `hitCharacterSelect`：角色选择（3D透视倾斜悬停动画）
   - `drawTransition` / `hitTransitionSkill` / `hitTransitionSlot` / `hitTransitionFight`：关卡过渡（装备技能、查看敌人预览、开始战斗）
-  - `renderGame` / `hitTestCard` / `hitTestGameButton` / `hitTestSkillSlot` / `hitTestDebugButton`：战斗界面（手牌、出牌区、技能槽、能量条、出牌/不出按钮、开发调试用"我赢"/"我输"按钮）
+  - `renderGame` / `hitTestCard` / `hitTestGameButton` / `hitTestSkillSlot` / `hitTestDebugButton`：战斗界面（手牌、出牌区、技能槽、出牌/不出按钮、开发调试用"我赢"/"我输"按钮）
   - `drawReward` / `hitReward`：过关奖励（3选1技能，带悬停缩放发光动画）
   - `drawGameOver` / `hitGameOver`：失败界面
 - `updateAnimations(float dt)`：统一更新所有界面的悬停/缩放/浮动动效。使用 `HoverAnimState` 结构体做 lerp 平滑（`SPEED = 14.0f`）。
@@ -236,7 +249,7 @@ main.cpp
   - 牌型大小比较（`beats`）
   - 技能效果是否在本回合正确生效并清除
   - 镜像机制：第N关敌人技能 = 玩家第N-1关装备的3个技能
-  - 能量和冷却的边界条件
+  - 敌人AI学习行为是否合理（k-NN 查询、技能概率阈值）
   - 各界面悬停动画流畅性
   - 窗口缩放后布局正确性
 
@@ -244,7 +257,7 @@ main.cpp
 
 ## 安全与部署注意事项
 
-- **SFML 静态链接**：CMake 定义了 `SFML_STATIC` 并传入 `-static`，链接的是带 `-s` 后缀的静态库。但构建目录中仍存在 MinGW 运行时 DLL（`libgcc_s_seh-1.dll`、`libstdc++-6.dll`、`libwinpthread-1.dll`），若需完全单文件分发，需确认链接 flags 生效。
+- **SFML 静态链接**：CMake 定义了 `SFML_STATIC` 并传入 `-static`，链接的是带 `-s` 后缀的静态库。但构建目录中仍可能出现 MinGW 运行时 DLL（`libgcc_s_seh-1.dll`、`libstdc++-6.dll`、`libwinpthread-1.dll`），若需完全单文件分发，需确认链接 flags 实际生效。
 - **字体版权**：`resources/simsun.ttc`（宋体）体积约 18MB，分发时需注意字体许可。
 - **存档路径**：运行时会在工作目录下创建 `saves/` 文件夹。`build/` 和 `dist/` 各自有独立的 `saves/` 子目录，运行时存档互不共享。
 - **图片映射**：`card{idx}.png` 的索引与 `CARD_MAP` 硬编码表一一对应（0~3 为黑桃/红桃/梅花/方片 3，依此类推，48~51 为 2，52~53 为大小王）。更换素材时只需修改 `CARD_MAP`，无需改动渲染逻辑。

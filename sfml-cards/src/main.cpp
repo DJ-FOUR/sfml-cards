@@ -46,7 +46,15 @@ int main()
     // ---- 过渡界面状态 ----
     int hoveredAcquiredIdx = -1;
     int hoveredSlotIdx = -1;
-    int selectedAcquiredIdx = -1;
+
+    // ---- 拖拽状态 ----
+    int  dragSourceType  = 0;    // 0=无, 1=卡池, 2=装备槽
+    int  dragSourceIndex = -1;
+    int  dragSkillId     = -1;
+    bool dragActive      = false;
+    float dragStartX     = 0.f;
+    float dragStartY     = 0.f;
+    constexpr float DRAG_THRESHOLD = 5.0f;
 
     // ---- 游戏阶段状态 ----
     bool phaseHandled = false;
@@ -130,41 +138,27 @@ int main()
                 else if (screen == Screen::Transition) {
                     sf::Vector2f pos = window.mapPixelToCoords(btn->position);
 
-                    int skHit = renderer.hitTransitionSkill(pos, winSize,
-                        (int)run.acquiredSkills().size(), run.equippedCount());
+                    int poolHit = renderer.hitTransitionPoolCard(pos, winSize,
+                        (int)run.acquiredSkills().size());
                     int slHit = renderer.hitTransitionSlot(pos, winSize);
                     int fightHit = renderer.hitTransitionFight(pos, winSize);
 
-                    if (slHit >= 0) {
-                        // 点击装备槽: 若已有选中的技能则装备
-                        if (selectedAcquiredIdx >= 0) {
-                            int skillId = run.acquiredSkills()[selectedAcquiredIdx];
-                            run.equipSkill(slHit, skillId);
-                            selectedAcquiredIdx = -1;
-                        }
-                        // 若装备槽已有技能, 卸下
-                        else if (run.equippedSkills()[slHit] >= 0) {
-                            run.unequipSlot(slHit);
-                        }
-                    } else if (skHit >= 0) {
-                        // 点击已获得技能: 选中 (准备放入槽位)
-                        selectedAcquiredIdx = skHit;
-                        // 自动放入第一个空槽
-                        auto& eq = run.equippedSkills();
-                        int skillId = run.acquiredSkills()[skHit];
-                        // 检查是否已装备
-                        bool alreadyEquipped = false;
-                        for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
-                            if (eq[i] == skillId) { alreadyEquipped = true; break; }
-                        if (!alreadyEquipped) {
-                            for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
-                                if (eq[i] < 0) {
-                                    run.equipSkill(i, skillId);
-                                    break;
-                                }
-                            }
-                        }
-                        selectedAcquiredIdx = -1;
+                    if (poolHit >= 0) {
+                        // 按下卡池卡片 → 开始拖拽
+                        dragSourceType = 1;
+                        dragSourceIndex = poolHit;
+                        dragSkillId = run.acquiredSkills()[poolHit];
+                        dragActive = false;
+                        dragStartX = mw.x;
+                        dragStartY = mw.y;
+                    } else if (slHit >= 0 && run.equippedSkills()[slHit] >= 0) {
+                        // 按下已装备槽 → 开始拖拽
+                        dragSourceType = 2;
+                        dragSourceIndex = slHit;
+                        dragSkillId = run.equippedSkills()[slHit];
+                        dragActive = false;
+                        dragStartX = mw.x;
+                        dragStartY = mw.y;
                     } else if (fightHit == 1) {
                         // 开始战斗
                         game.dealCards(run.extraCards());
@@ -211,6 +205,51 @@ int main()
                     if (hit == 1) {
                         screen = Screen::MainMenu;
                     }
+                }
+            }
+
+            // ========== 鼠标释放: 拖拽结束 ==========
+            if (const auto* rel = event->getIf<sf::Event::MouseButtonReleased>()) {
+                if (rel->button == sf::Mouse::Button::Left
+                    && screen == Screen::Transition
+                    && dragSourceType != 0)
+                {
+                    sf::Vector2f pos = window.mapPixelToCoords(rel->position);
+
+                    int poolHit = renderer.hitTransitionPoolCard(pos, winSize,
+                        (int)run.acquiredSkills().size());
+                    int slHit = renderer.hitTransitionSlot(pos, winSize);
+                    bool poolArea = renderer.hitTransitionPool(pos, winSize);
+
+                    if (dragActive) {
+                        // ---- 拖拽完成 ----
+                        if (dragSourceType == 1) {
+                            // 从卡池拖出 → 放入槽位
+                            if (slHit >= 0)
+                                run.equipSkill(slHit, dragSkillId);
+                        } else if (dragSourceType == 2) {
+                            // 从槽位拖出
+                            if (slHit >= 0 && slHit != dragSourceIndex) {
+                                // 放入不同槽 → 交换
+                                run.swapSlots(dragSourceIndex, slHit);
+                            } else if (poolArea || poolHit >= 0) {
+                                // 放入卡池区域 → 卸载
+                                run.unequipSlot(dragSourceIndex);
+                            }
+                        }
+                    } else {
+                        // ---- 点击（未拖拽） ----
+                        if (dragSourceType == 2) {
+                            // 点击已装备槽 → 卸载
+                            run.unequipSlot(dragSourceIndex);
+                        }
+                    }
+
+                    // 清除拖拽状态
+                    dragSourceType = 0;
+                    dragSourceIndex = -1;
+                    dragSkillId = -1;
+                    dragActive = false;
                 }
             }
 
@@ -307,6 +346,15 @@ int main()
         } // end pollEvent
 
         // ========== 更新 ==========
+
+        // 拖拽阈值检测
+        if (dragSourceType != 0 && !dragActive) {
+            float dx = mw.x - dragStartX;
+            float dy = mw.y - dragStartY;
+            if (dx * dx + dy * dy > DRAG_THRESHOLD * DRAG_THRESHOLD)
+                dragActive = true;
+        }
+
         if (screen == Screen::Game) {
             auto sorted = selectedIndices;
             std::sort(sorted.begin(), sorted.end());
@@ -349,6 +397,14 @@ int main()
         float dt = animClock.restart().asSeconds();
         renderer.updateAnimations(dt);
 
+        // ---------- 过渡界面悬停检测 ----------
+        if (screen == Screen::Transition) {
+            hoveredAcquiredIdx = renderer.hitTransitionPoolCard(mw, winSize,
+                (int)run.acquiredSkills().size());
+            hoveredSlotIdx = renderer.hitTransitionSlot(mw, winSize);
+            if (dragActive) hoveredAcquiredIdx = -1;
+        }
+
         // ========== 渲染 ==========
         winSize = window.getSize();
 
@@ -362,7 +418,8 @@ int main()
         case Screen::Transition:
             renderer.drawTransition(winSize, mw,
                 run.currentLevel(), run.acquiredSkills(),
-                run.equippedSkills(), hoveredAcquiredIdx, hoveredSlotIdx);
+                run.equippedSkills(), hoveredAcquiredIdx, hoveredSlotIdx,
+                dragSourceType, dragSourceIndex, dragSkillId, dragActive);
             break;
         case Screen::Game:
             renderer.renderGame(game, selectedIndices, winSize,

@@ -23,7 +23,7 @@ sf::Color slotEmptyColor(17, 17, 17);
 sf::Color slotFilledColor(20, 30, 10);
 // 新风格主色
 constexpr sf::Color NEON_GREEN(204, 255, 0);
-constexpr sf::Color DARK_BG(5, 5, 5);
+constexpr sf::Color DARK_BG(250, 250, 250);
 constexpr sf::Color PANEL_BG(13, 13, 13);
 constexpr sf::Color BORDER_NORMAL(51, 51, 51);
 constexpr sf::Color TEXT_DIM(170, 170, 170);
@@ -88,12 +88,12 @@ void drawTacticalGrid(sf::RenderWindow& window, sf::Vector2u winSize)
     for (float y = 0; y < h; y += 4.f) {
         sf::RectangleShape line({w, 1.f});
         line.setPosition({0.f, y});
-        line.setFillColor(sf::Color(10, 10, 10, 30));
+        line.setFillColor(sf::Color(230, 230, 230, 30));
         window.draw(line);
     }
 
     // 网格
-    sf::Color gridCol(26, 26, 26, 100);
+    sf::Color gridCol(200, 200, 200, 100);
     for (float x = 0; x < w; x += 80.f) {
         sf::RectangleShape vl({1.f, h});
         vl.setPosition({x, 0.f});
@@ -386,7 +386,7 @@ void Renderer::drawBackground(sf::Vector2u winSize)
 
     // 版本号
     sf::Text ver(m_font, L"v1.0.0_OS", 14);
-    ver.setFillColor(sf::Color(68, 68, 68));
+    ver.setFillColor(sf::Color(160, 160, 160));
     auto vsz = ver.getGlobalBounds().size;
     ver.setPosition({w - vsz.x - 16.f, h - vsz.y - 12.f});
     m_window.draw(ver);
@@ -753,10 +753,62 @@ int Renderer::hitCharacterSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
 
 // ====== 关卡过渡 (装备技能) ======
 
+// ---- Transition 卡池布局 ----
+struct TransitionPoolLayout {
+    float cardW, cardH, poolX, poolY, colGap, rowGap;
+    static constexpr int COLS = 2;
+};
+
+static TransitionPoolLayout calcTransitionPoolLayout(sf::Vector2u winSize)
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    float cardH = h * 0.16f;                 // 竖版卡牌 7:12
+    float cardW = cardH * 7.0f / 12.0f;
+    return {
+        cardW, cardH,
+        w * 0.06f,       // poolX
+        h * 0.14f,       // poolY
+        w * 0.03f,       // colGap
+        h * 0.015f       // rowGap
+    };
+}
+
+sf::FloatRect Renderer::transitionPoolCardRect(int cardIndex, sf::Vector2u winSize) const
+{
+    auto L = calcTransitionPoolLayout(winSize);
+    int col = cardIndex % L.COLS;
+    int row = cardIndex / L.COLS;
+    float x = L.poolX + col * (L.cardW + L.colGap);
+    float y = L.poolY + row * (L.cardH + L.rowGap);
+    return {{x, y}, {L.cardW, L.cardH}};
+}
+
+int Renderer::hitTransitionPoolCard(const sf::Vector2f& pos, sf::Vector2u winSize,
+                                     int acquiredCount)
+{
+    for (int i = 0; i < acquiredCount; ++i)
+        if (transitionPoolCardRect(i, winSize).contains(pos))
+            return i;
+    return -1;
+}
+
+bool Renderer::hitTransitionPool(const sf::Vector2f& pos, sf::Vector2u winSize)
+{
+    auto L = calcTransitionPoolLayout(winSize);
+    int maxRows = (SKILL_COUNT + L.COLS - 1) / L.COLS;
+    float areaW = L.COLS * L.cardW + (L.COLS - 1) * L.colGap + (float)winSize.x * 0.04f;
+    float areaH = maxRows * L.cardH + (maxRows - 1) * L.rowGap + (float)winSize.y * 0.03f;
+    return sf::FloatRect({L.poolX - (float)winSize.x * 0.02f,
+                          L.poolY - (float)winSize.y * 0.015f}, {areaW, areaH}).contains(pos);
+}
+
 void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                                int level, const std::vector<int>& acquiredSkills,
                                const std::array<int, MAX_SKILL_SLOTS>& equipped,
-                               int hoveredAcquiredIdx, int hoveredSlotIdx)
+                               int hoveredAcquiredIdx, int hoveredSlotIdx,
+                               int dragSourceType, int dragSourceIndex,
+                               int dragSkillId, bool isDragging)
 {
     drawBackground(winSize);
     drawBackButton(winSize, mousePos);
@@ -765,75 +817,82 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     float h = (float)winSize.y;
 
     // 标题
-    drawTitle(L"第 " + std::to_wstring(level) + L" 关" + std::to_wstring(level), 0.05f, winSize);
-
-    // ---- 左侧: 已获得技能列表 ----
-    float leftX = w * 0.05f;
-    float listY = h * 0.18f;
-    float listW = w * 0.48f;
-    float itemH = h * 0.06f;
-    float itemGap = h * 0.01f;
-
-    sf::Text heading(m_font, L"已获得协议", (unsigned)(h * 0.032f));
-    heading.setFillColor(TEXT_DIM);
-    heading.setPosition({leftX, listY - h * 0.04f});
-    m_window.draw(heading);
+    drawTitle(L"第 " + std::to_wstring(level) + L" 关", 0.05f, winSize);
 
     auto& allSkills = getAllSkills();
+
+    // ---- 卡池布局计算 ----
+    auto L = calcTransitionPoolLayout(winSize);
+
+    // ---- 左侧: 已获得技能卡池 ----
+    sf::Text heading(m_font, L"已获得协议", (unsigned)(h * 0.028f));
+    heading.setFillColor(TEXT_DIM);
+    heading.setPosition({L.poolX, L.poolY - h * 0.04f});
+    m_window.draw(heading);
+
+    // 卡池背景 — 从槽位拖出时高亮
+    bool poolHighlight = isDragging && dragSourceType == 2;
+    int totalRows = ((int)acquiredSkills.size() + L.COLS - 1) / L.COLS;
+    if (totalRows < 1) totalRows = 1;
+    float poolBgW = L.COLS * L.cardW + (L.COLS - 1) * L.colGap + w * 0.04f;
+    float poolBgH = totalRows * L.cardH + (totalRows - 1) * L.rowGap + h * 0.03f;
+    sf::RectangleShape poolBg({poolBgW, poolBgH});
+    poolBg.setPosition({L.poolX - w * 0.02f, L.poolY - h * 0.015f});
+    poolBg.setFillColor(poolHighlight ? sf::Color(20, 26, 15, 180) : sf::Color(10, 10, 10, 120));
+    poolBg.setOutlineColor(poolHighlight ? NEON_GREEN : BORDER_NORMAL);
+    poolBg.setOutlineThickness(poolHighlight ? 1.5f : 0.5f);
+    m_window.draw(poolBg);
 
     for (size_t i = 0; i < acquiredSkills.size(); ++i) {
         int sid = acquiredSkills[i];
         if (sid < 0 || sid >= SKILL_COUNT) continue;
-        auto& sk = allSkills[sid];
-        float iy = listY + i * (itemH + itemGap);
+        int col = (int)i % L.COLS;
+        int row = (int)i / L.COLS;
+        float cx = L.poolX + col * (L.cardW + L.colGap);
+        float cy = L.poolY + row * (L.cardH + L.rowGap);
+
         bool isEquipped = false;
         for (int e = 0; e < MAX_SKILL_SLOTS; ++e)
             if (equipped[e] == sid) { isEquipped = true; break; }
         bool hover = ((int)i == hoveredAcquiredIdx);
+        bool isBeingDragged = isDragging && dragSourceType == 1
+                              && dragSourceIndex == (int)i;
 
-        // 分隔线
-        sf::RectangleShape sep({listW, 1.f});
-        sep.setPosition({leftX, iy + itemH});
-        sep.setFillColor(BORDER_NORMAL);
-        m_window.draw(sep);
+        if (isBeingDragged) {
+            // 占位孔
+            drawBeveledRect(m_window, cx, cy, L.cardW, L.cardH, 10.f,
+                            sf::Color(20, 20, 20, 60), BORDER_NORMAL, 1.f);
+        } else {
+            drawSkillCard(cx, cy, L.cardW, L.cardH, sid, false, hover, winSize);
 
-        // 左侧竖线指示器
-        float indW = isEquipped ? 4.f : (hover ? 3.f : 2.f);
-        sf::RectangleShape ind({indW, itemH * 0.6f});
-        ind.setPosition({leftX + 4.f, iy + itemH * 0.2f});
-        ind.setFillColor(isEquipped ? NEON_GREEN : (hover ? NEON_GREEN : BORDER_NORMAL));
-        m_window.draw(ind);
-
-        // 悬停背景
-        if (hover) {
-            sf::RectangleShape hbg({listW, itemH});
-            hbg.setPosition({leftX, iy});
-            hbg.setFillColor(sf::Color(17, 26, 8));
-            m_window.draw(hbg);
+            // 已装备角标
+            if (isEquipped) {
+                float badgeSz = L.cardW * 0.14f;
+                sf::ConvexShape badge(3);
+                badge.setPoint(0, {cx + L.cardW - badgeSz, cy});
+                badge.setPoint(1, {cx + L.cardW, cy});
+                badge.setPoint(2, {cx + L.cardW, cy + badgeSz});
+                badge.setFillColor(NEON_GREEN);
+                m_window.draw(badge);
+            }
         }
-
-        std::wstring label = L"[" + sk.name + L"]" + std::to_wstring(sid + 1) + L"  " + sk.desc;
-        sf::Text st(m_font, label, (unsigned)(itemH * 0.38f));
-        st.setFillColor(isEquipped ? NEON_GREEN : sf::Color::White);
-        st.setPosition({leftX + w * 0.012f, iy + itemH * 0.15f});
-        m_window.draw(st);
     }
 
     if (acquiredSkills.empty()) {
-        sf::Text empty(m_font, L"暂无技能 (击败敌人后获得)", (unsigned)(h * 0.03f));
+        sf::Text empty(m_font, L"暂无技能 (击败敌人后获得)", (unsigned)(h * 0.026f));
         empty.setFillColor(sf::Color(128, 128, 128));
-        empty.setPosition({leftX, listY});
+        empty.setPosition({L.poolX, L.poolY});
         m_window.draw(empty);
     }
 
-    // ---- 右侧: 装备槽 (卡牌 7:12 比例) ----
-    float rightX = w * 0.58f;
-    float slotW = h * 0.10f * 7.0f / 12.0f;
-    float slotH = h * 0.10f;
+    // ---- 右侧: 装备槽 ----
+    float rightX = w * 0.53f;
+    float slotH = h * 0.20f;
+    float slotW = slotH * 7.0f / 12.0f;
     float slotGap = w * 0.03f;
-    float slotStartY = h * 0.18f;
+    float slotStartY = h * 0.14f;
 
-    sf::Text slotHeading(m_font, L"装备槽", (unsigned)(h * 0.032f));
+    sf::Text slotHeading(m_font, L"装备槽", (unsigned)(h * 0.028f));
     slotHeading.setFillColor(TEXT_DIM);
     slotHeading.setPosition({rightX, slotStartY - h * 0.04f});
     m_window.draw(slotHeading);
@@ -841,21 +900,28 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         int sid = equipped[i];
         float sx = rightX + i * (slotW + slotGap);
-        bool hover = (i == hoveredSlotIdx);
+        bool slotHover = (i == hoveredSlotIdx);
+        bool isDropTarget = isDragging && slotHover;
+        bool isBeingDraggedFrom = isDragging && dragSourceType == 2
+                                  && dragSourceIndex == i;
+        bool highlight = slotHover || isDropTarget;
 
         float slotCut = 4.f;
-        // 技能槽底框（切角矩形）
-        sf::Color sfill = sid >= 0 ? slotFilledColor
-                          : (hover ? sf::Color(26, 26, 10) : slotEmptyColor);
-        sf::Color soutline = hover ? NEON_GREEN : BORDER_NORMAL;
-        drawBeveledRect(m_window, sx, slotStartY + (hover ? -2.f : 0.f), slotW, slotH, slotCut,
-                        sfill, soutline, hover ? 2.f : 1.f);
+        float baseY = slotStartY + (highlight ? -2.f : 0.f);
 
-        if (sid >= 0) {
-            auto& sk = allSkills[sid];
-            // 顶部色带
+        // 被拖出时显示空槽样式
+        int drawSid = isBeingDraggedFrom ? -1 : sid;
+
+        sf::Color sfill = drawSid >= 0 ? slotFilledColor
+                          : (highlight ? sf::Color(26, 26, 10) : slotEmptyColor);
+        sf::Color soutline = highlight ? NEON_GREEN : BORDER_NORMAL;
+        drawBeveledRect(m_window, sx, baseY, slotW, slotH, slotCut,
+                        sfill, soutline, highlight ? 2.f : 1.f);
+
+        if (drawSid >= 0) {
+            auto& sk = allSkills[drawSid];
             sf::RectangleShape sbar({slotW - slotCut * 2, 6.f});
-            sbar.setPosition({sx + slotCut, slotStartY + (hover ? -2.f : 0.f) + 2.f});
+            sbar.setPosition({sx + slotCut, baseY + 2.f});
             sbar.setFillColor(NEON_GREEN);
             m_window.draw(sbar);
 
@@ -863,20 +929,19 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             slotText.setFillColor(sf::Color::White);
             slotText.setStyle(sf::Text::Bold);
             auto tsz = slotText.getGlobalBounds().size;
-            slotText.setPosition({sx + (slotW - tsz.x) / 2.f, slotStartY + (hover ? -2.f : 0.f) + slotH * 0.22f});
+            slotText.setPosition({sx + (slotW - tsz.x) / 2.f, baseY + slotH * 0.22f});
             m_window.draw(slotText);
 
-            bool isTrigger = (sid == 1 || sid == 6 || sid == 7);
+            bool isTrigger = (drawSid == 1 || drawSid == 6 || drawSid == 7);
             std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
             sf::Text cost(m_font, typeStr, (unsigned)(slotH * 0.12f));
             cost.setFillColor(TEXT_DIM);
             auto csz = cost.getGlobalBounds().size;
-            cost.setPosition({sx + (slotW - csz.x) / 2.f, slotStartY + (hover ? -2.f : 0.f) + slotH * 0.60f});
+            cost.setPosition({sx + (slotW - csz.x) / 2.f, baseY + slotH * 0.60f});
             m_window.draw(cost);
         } else {
-            // 空槽准星
             float cx = sx + slotW / 2.f;
-            float cy = slotStartY + slotH / 2.f;
+            float cy = baseY + slotH / 2.f;
             sf::RectangleShape crossH({slotW * 0.25f, 1.f});
             crossH.setPosition({cx - slotW * 0.125f, cy});
             crossH.setFillColor(BORDER_NORMAL);
@@ -889,7 +954,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             sf::Text empty(m_font, L"-- EMPTY --", (unsigned)(slotH * 0.12f));
             empty.setFillColor(TEXT_DISABLED);
             auto esz = empty.getGlobalBounds().size;
-            empty.setPosition({sx + (slotW - esz.x) / 2.f, slotStartY + slotH * 0.65f});
+            empty.setPosition({sx + (slotW - esz.x) / 2.f, baseY + slotH * 0.65f});
             m_window.draw(empty);
         }
     }
@@ -923,7 +988,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         }
     }
 
-    // ---- 开始战斗按钮（矩形，悬停抖动） ----
+    // ---- 开始战斗按钮 ----
     constexpr sf::Color MAGENTA(255, 0, 128);
     constexpr sf::Color MAGENTA_BG(30, 5, 20);
 
@@ -934,19 +999,16 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     float btnCut = 8.f;
     bool fightHover = sf::FloatRect({btnX, btnY}, {btnW, btnH}).contains(mousePos);
 
-    // 按钮主体
     sf::Color btnFill = fightHover ? MAGENTA_BG : sf::Color(10, 20, 5);
     sf::Color btnOutline = fightHover ? MAGENTA : NEON_GREEN;
     drawBeveledRect(m_window, btnX, btnY, btnW, btnH, btnCut,
                     btnFill, btnOutline, fightHover ? 2.5f : 2.f);
 
-    // 悬停时顶部条纹装饰
     if (fightHover) {
         drawHazardStripes(m_window, btnX, btnY + 2.f, btnW, 4.f, 8.f);
         drawHazardStripes(m_window, btnX, btnY + btnH - 6.f, btnW, 4.f, 8.f);
     }
 
-    // 文字 — 悬停时剧烈抖动
     float fontSize = btnH * 0.35f;
     sf::Text fightText(m_font, L"开始战斗", (unsigned)fontSize);
     fightText.setFillColor(fightHover ? MAGENTA : NEON_GREEN);
@@ -963,36 +1025,76 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     }
     fightText.setPosition({baseX + shakeX, baseY + shakeY});
     m_window.draw(fightText);
-}
 
-int Renderer::hitTransitionSkill(const sf::Vector2f& pos, sf::Vector2u winSize,
-                                  int acquiredCount, int /*equippedCount*/)
-{
-    float w = (float)winSize.x;
-    float h = (float)winSize.y;
-    float leftX = w * 0.05f;
-    float listY = h * 0.18f;
-    float listW = w * 0.48f;
-    float itemH = h * 0.06f;
-    float itemGap = h * 0.01f;
+    // ---- 幽灵卡 (拖拽跟随鼠标) ----
+    if (isDragging && dragSkillId >= 0 && dragSkillId < SKILL_COUNT) {
+        auto& sk = allSkills[dragSkillId];
+        float ghostW = L.cardW * 1.05f;
+        float ghostH = L.cardH * 1.05f;
+        float gx = mousePos.x - ghostW / 2.f;
+        float gy = mousePos.y - ghostH / 2.f;
+        float gcut = 10.f;
 
-    for (int i = 0; i < acquiredCount; ++i) {
-        float iy = listY + i * (itemH + itemGap);
-        if (sf::FloatRect({leftX, iy}, {listW, itemH}).contains(pos))
-            return i;
+        // 半透明卡体
+        drawBeveledRect(m_window, gx, gy, ghostW, ghostH, gcut,
+                        sf::Color(15, 20, 10, 210),
+                        sf::Color(204, 255, 0, 180), 2.f);
+
+        // 顶部色带
+        sf::RectangleShape gbar({ghostW - gcut * 2, ghostH * 0.04f});
+        gbar.setPosition({gx + gcut, gy + 2.f});
+        gbar.setFillColor(sf::Color(204, 255, 0, 180));
+        m_window.draw(gbar);
+
+        // 图标
+        float iconSize = ghostW * 0.30f;
+        float iconX = gx + (ghostW - iconSize) / 2.f;
+        float iconY = gy + ghostH * 0.08f;
+        float ic = iconSize * 0.15f;
+        sf::ConvexShape oct(8);
+        oct.setPoint(0, {iconX + ic, iconY});
+        oct.setPoint(1, {iconX + iconSize - ic, iconY});
+        oct.setPoint(2, {iconX + iconSize, iconY + ic});
+        oct.setPoint(3, {iconX + iconSize, iconY + iconSize - ic});
+        oct.setPoint(4, {iconX + iconSize - ic, iconY + iconSize});
+        oct.setPoint(5, {iconX + ic, iconY + iconSize});
+        oct.setPoint(6, {iconX, iconY + iconSize - ic});
+        oct.setPoint(7, {iconX, iconY + ic});
+        oct.setFillColor(sf::Color(10, 10, 10, 210));
+        oct.setOutlineColor(sf::Color(204, 255, 0, 180));
+        oct.setOutlineThickness(1.f);
+        m_window.draw(oct);
+
+        sf::Text gIcon(m_font, L"S" + std::to_wstring(dragSkillId + 1),
+                       (unsigned)(iconSize * 0.38f));
+        gIcon.setFillColor(sf::Color(204, 255, 0, 200));
+        auto isz = gIcon.getGlobalBounds().size;
+        gIcon.setPosition({gx + (ghostW - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
+        m_window.draw(gIcon);
+
+        // 技能名
+        float nameF = ghostH * 0.10f;
+        sf::Text gName(m_font, sk.name, (unsigned)nameF);
+        gName.setFillColor(sf::Color(255, 255, 255, 200));
+        gName.setStyle(sf::Text::Bold);
+        auto nsz = gName.getGlobalBounds().size;
+        float iconBot = iconY + iconSize;
+        float gInfoTop = gy + ghostH - ghostH * 0.065f;
+        gName.setPosition({gx + (ghostW - nsz.x) / 2.f,
+                           (iconBot + gInfoTop - nsz.y) / 2.f});
+        m_window.draw(gName);
     }
-    return -1;
 }
 
 int Renderer::hitTransitionSlot(const sf::Vector2f& pos, sf::Vector2u winSize)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
-    float rightX = w * 0.58f;
-    float slotW = h * 0.10f * 7.0f / 12.0f;
-    float slotH = h * 0.10f;
+    float rightX = w * 0.53f;
+    float slotH = h * 0.20f;
+    float slotW = slotH * 7.0f / 12.0f;
     float slotGap = w * 0.03f;
-    float slotStartY = h * 0.18f;
+    float slotStartY = h * 0.14f;
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         float sx = rightX + i * (slotW + slotGap);

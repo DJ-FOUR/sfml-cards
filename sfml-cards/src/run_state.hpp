@@ -28,6 +28,8 @@ public:
     void equipSkill(int slotIdx, int skillId);
     void unequipSlot(int slotIdx);
     int  equippedCount() const;
+    int  equippedSlotOf(int skillId) const;
+    void swapSlots(int a, int b);
 
     // 镜像给下一关敌人的技能 (上一关战斗时的快照)
     std::array<int, MAX_SKILL_SLOTS> mirroredSkills() const { return m_mirroredSkills; }
