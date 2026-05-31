@@ -24,6 +24,11 @@ struct SkillBuffs
     bool pairsExtended     = false;  // S04
     bool tripleExtraKicker = false;  // S05
     bool airplaneExtended  = false;  // S06
+    int  wildcardRank       = -1;     // 癞子点数 (-1=无), 角色的被动技
 
-    void clear() { *this = SkillBuffs{}; }
+    void clear() {
+        int saved = wildcardRank;
+        *this = SkillBuffs{};
+        wildcardRank = saved;
+    }
 };

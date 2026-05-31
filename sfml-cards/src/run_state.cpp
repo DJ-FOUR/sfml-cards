@@ -15,6 +15,7 @@ void RunState::startNewRun(int characterId)
     m_acquired.clear();
     m_equipped = {-1, -1, -1};
     m_mirroredSkills = {-1, -1, -1};
+    m_wildcardRank = -1;
 }
 
 void RunState::advanceToNextLevel()

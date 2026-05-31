@@ -13,7 +13,7 @@
 #include "run_state.hpp"
 #include "ai_memory.hpp"
 
-enum class Screen { MainMenu, CharacterSelect, Transition, Game, Reward, GameOver };
+enum class Screen { MainMenu, CharacterSelect, WildcardSelect, Transition, Game, Reward, GameOver };
 
 int main()
 {
@@ -119,10 +119,25 @@ int main()
                     if (hit >= 1 && hit <= 3) {
                         aiMemory.clear();
                         run.startNewRun(hit - 1);
-                        rewardSkills = run.rollRewardSkills();
-                        screen = Screen::Reward;
+                        if (hit == 2) {
+                            screen = Screen::WildcardSelect;
+                        } else {
+                            rewardSkills = run.rollRewardSkills();
+                            screen = Screen::Reward;
+                        }
                     } else if (hit == 9) {
                         screen = Screen::MainMenu;
+                    }
+                }
+
+                // ========== 癞子选择 ==========
+                else if (screen == Screen::WildcardSelect) {
+                    sf::Vector2f pos = window.mapPixelToCoords(btn->position);
+                    int hit = renderer.hitWildcardSelect(pos, winSize);
+                    if (hit >= 0 && hit <= 12) {
+                        run.setWildcardRank(hit);
+                        rewardSkills = run.rollRewardSkills();
+                        screen = Screen::Reward;
                     }
                 }
 
@@ -167,6 +182,7 @@ int main()
                         selectedAcquiredIdx = -1;
                     } else if (fightHit == 1) {
                         // 开始战斗
+                        game.setPlayerWildcard(run.wildcardRank());
                         game.dealCards(run.extraCards());
                         if (run.currentLevel() == 1) {
                             game.setEnemySkills({-1, -1, -1});
@@ -218,6 +234,7 @@ int main()
             if (screen == Screen::Game) {
                 if (const auto* key = event->getIf<sf::Event::KeyPressed>()) {
                     if (key->code == sf::Keyboard::Key::R) {
+                        game.setPlayerWildcard(run.wildcardRank());
                         game.dealCards(run.extraCards());
                         if (run.currentLevel() == 1)
                             game.setEnemySkills({-1, -1, -1});
@@ -358,6 +375,9 @@ int main()
             break;
         case Screen::CharacterSelect:
             renderer.drawCharacterSelect(winSize, mw);
+            break;
+        case Screen::WildcardSelect:
+            renderer.drawWildcardSelect(winSize, mw);
             break;
         case Screen::Transition:
             renderer.drawTransition(winSize, mw,
