@@ -1,0 +1,9 @@
+# CMake build output
+build/
+
+# IDE user settings
+.vscode/settings.json
+
+# OS
+Thumbs.db
+Desktop.ini

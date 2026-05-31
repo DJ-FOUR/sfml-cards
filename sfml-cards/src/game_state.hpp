@@ -47,6 +47,8 @@ public:
     void dealCards(int extraCards);
     // enemySkills: 镜像给敌人的技能id列表
     void setEnemySkills(const std::array<int, MAX_SKILL_SLOTS>& skills);
+    // 设置玩家癞子点数 (角色被动技)
+    void setPlayerWildcard(int rank) { m_playerBuffs.wildcardRank = rank; }
 
     const std::vector<Card>& playerHand() const   { return m_playerHand; }
     const std::vector<Card>& computerHand() const { return m_computerHand; }
@@ -68,6 +70,8 @@ public:
 
     static std::optional<HandPattern> classifyHand(const std::vector<Card>& cards,
                                                      const SkillBuffs* buffs = nullptr);
+    static std::optional<HandPattern> classifyHandNoWild(const std::vector<Card>& cards,
+                                                           const SkillBuffs* buffs = nullptr);
     static bool beats(const PlayedCards& play, const PlayedCards& lastPlay,
                       const SkillBuffs* buffs = nullptr);
 

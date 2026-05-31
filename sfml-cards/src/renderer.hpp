@@ -46,6 +46,10 @@ public:
     void drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mousePos);
     int  hitCharacterSelect(const sf::Vector2f& pos, sf::Vector2u winSize);
 
+    // ---- 癞子点数选择 (谋略家被动) ----
+    void drawWildcardSelect(sf::Vector2u winSize, const sf::Vector2f& mousePos);
+    int  hitWildcardSelect(const sf::Vector2f& pos, sf::Vector2u winSize);
+
     // ---- 关卡过渡 (每关前装备技能) ----
     void drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                         int level, const std::vector<int>& acquiredSkills,

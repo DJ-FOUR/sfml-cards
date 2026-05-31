@@ -693,19 +693,7 @@ void Renderer::drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mou
         float shiftX = normX * actualCW * 0.045f * s;
         float shiftY = normY * actualCH * 0.025f * s;
 
-        // ---- 绘制发光边框（在卡片底层）----
-        if (m_charHover[i].currentYOffset < -1.0f) {
-            float glowPad = 8.0f * s;
-            sf::RectangleShape glow({actualCW + glowPad * 2, actualCH + glowPad * 2});
-            glow.setOrigin({(actualCW + glowPad * 2) / 2.0f,
-                            (actualCH + glowPad * 2) / 2.0f});
-            glow.setPosition({cardCX + shiftX, cardCY + shiftY});
-            glow.setFillColor(sf::Color::Transparent);
-            float glowAlpha = 160.0f * std::abs(m_charHover[i].currentYOffset / (h * 0.065f));
-            glow.setOutlineColor(sf::Color(204, 255, 0, (std::uint8_t)glowAlpha));
-            glow.setOutlineThickness(2.5f * s);
-            m_window.draw(glow);
-        }
+        
 
         // ---- 更新并绘制卡片内容 ----
         bool hover = m_charHover[i].targetYOffset < -0.1f;
@@ -749,6 +737,82 @@ int Renderer::hitCharacterSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
     float bbw = w * 0.08f, bbh = h * 0.045f;
     if (sf::FloatRect({bx, by}, {bbw, bbh}).contains(pos)) return 9;
     return 0;
+}
+
+// ====== 癞子点数选择 (谋略家被动) ======
+
+namespace {
+const wchar_t* WILDCARD_RANK_NAMES[13] = {
+    L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"10", L"J", L"Q", L"K", L"A", L"2"
+};
+}
+
+void Renderer::drawWildcardSelect(sf::Vector2u winSize, const sf::Vector2f& mousePos)
+{
+    drawBackground(winSize);
+    drawTitle(L"选择癞子点数", 0.06f, winSize);
+
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+
+    constexpr int RANK_COUNT = 13;
+    float cardW = w * 0.055f;
+    float cardH = cardW * 150.f / 105.f;
+    float gap = w * 0.015f;
+    float totalW = RANK_COUNT * cardW + (RANK_COUNT - 1) * gap;
+    float startX = (w - totalW) / 2.0f;
+    float baseY = h * 0.38f;
+
+    for (int i = 0; i < RANK_COUNT; ++i) {
+        float cx = startX + i * (cardW + gap);
+        sf::FloatRect cardRect({cx, baseY}, {cardW, cardH});
+        bool hover = cardRect.contains(mousePos);
+
+        float curS = hover ? 1.12f : 1.0f;
+        float curW = cardW * curS;
+        float curH = cardH * curS;
+        float curX = cx + (cardW - curW) / 2.0f;
+        float curY = baseY + (cardH - curH) / 2.0f + (hover ? -h * 0.025f : 0.0f);
+
+        sf::Color fill = hover ? sf::Color(20, 30, 10) : sf::Color(13, 13, 13);
+        sf::Color outline = hover ? NEON_GREEN : BORDER_NORMAL;
+        drawBeveledRect(m_window, curX, curY, curW, curH, 6.f, fill, outline, hover ? 2.f : 1.f);
+
+        sf::Text rankText(m_font, WILDCARD_RANK_NAMES[i], (unsigned)(curH * 0.42f));
+        rankText.setFillColor(hover ? NEON_GREEN : sf::Color(220, 220, 220));
+        rankText.setStyle(sf::Text::Bold);
+        auto tsz = rankText.getGlobalBounds().size;
+        rankText.setPosition({curX + (curW - tsz.x) / 2.0f, curY + (curH - tsz.y) / 2.0f});
+        m_window.draw(rankText);
+    }
+
+    // 底部提示
+    sf::Text hint(m_font, L"选择一张点数作为癞子牌（万能牌）", (unsigned)(h * 0.03f));
+    hint.setFillColor(sf::Color(160, 160, 160));
+    auto hsz = hint.getGlobalBounds().size;
+    hint.setPosition({(w - hsz.x) / 2.0f, baseY + cardH + h * 0.06f});
+    m_window.draw(hint);
+}
+
+int Renderer::hitWildcardSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+
+    constexpr int RANK_COUNT = 13;
+    float cardW = w * 0.055f;
+    float cardH = cardW * 150.f / 105.f;
+    float gap = w * 0.015f;
+    float totalW = RANK_COUNT * cardW + (RANK_COUNT - 1) * gap;
+    float startX = (w - totalW) / 2.0f;
+    float baseY = h * 0.38f;
+
+    for (int i = 0; i < RANK_COUNT; ++i) {
+        float cx = startX + i * (cardW + gap);
+        if (sf::FloatRect({cx, baseY}, {cardW, cardH}).contains(pos))
+            return i;  // 返回 doudizhuOrder 值 0-12
+    }
+    return -1;
 }
 
 // ====== 关卡过渡 (装备技能) ======
@@ -818,6 +882,18 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
 
     // 标题
     drawTitle(L"第 " + std::to_wstring(level) + L" 关", 0.05f, winSize);
+
+    // ---- 左侧: 已获得技能列表 ----
+    float leftX = w * 0.05f;
+    float listY = h * 0.18f;
+    float listW = w * 0.48f;
+    float itemH = h * 0.06f;
+    float itemGap = h * 0.01f;
+
+    sf::Text heading(m_font, L"已获得协议", (unsigned)(h * 0.032f));
+    heading.setFillColor(TEXT_DIM);
+    heading.setPosition({leftX, listY - h * 0.04f});
+    m_window.draw(heading);
 
     auto& allSkills = getAllSkills();
 
@@ -1846,6 +1922,18 @@ void Renderer::renderGame(const GameState& state,
             sprite.setPosition({bcx, bcy});
             sprite.setRotation(sf::degrees(fanRot));
             m_window.draw(sprite);
+
+            // 癞子牌金色标记
+            if (state.playerBuffs().wildcardRank >= 0
+                && doudizhuOrder(ph[i].rank) == state.playerBuffs().wildcardRank) {
+                sf::Sprite wglow(it->second);
+                wglow.setOrigin({CARD_W / 2.0f, CARD_H});
+                wglow.setScale({hs * 1.03f, hs * 1.03f});
+                wglow.setPosition({bcx, bcy});
+                wglow.setRotation(sf::degrees(fanRot));
+                wglow.setColor(sf::Color(255, 190, 30, 80));
+                m_window.draw(wglow);
+            }
 
             if (sel) {
                 // 荧光绿 overlay
