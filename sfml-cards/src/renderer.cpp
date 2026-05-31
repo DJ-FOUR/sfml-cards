@@ -693,19 +693,7 @@ void Renderer::drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mou
         float shiftX = normX * actualCW * 0.045f * s;
         float shiftY = normY * actualCH * 0.025f * s;
 
-        // ---- 绘制发光边框（在卡片底层）----
-        if (m_charHover[i].currentYOffset < -1.0f) {
-            float glowPad = 8.0f * s;
-            sf::RectangleShape glow({actualCW + glowPad * 2, actualCH + glowPad * 2});
-            glow.setOrigin({(actualCW + glowPad * 2) / 2.0f,
-                            (actualCH + glowPad * 2) / 2.0f});
-            glow.setPosition({cardCX + shiftX, cardCY + shiftY});
-            glow.setFillColor(sf::Color::Transparent);
-            float glowAlpha = 160.0f * std::abs(m_charHover[i].currentYOffset / (h * 0.065f));
-            glow.setOutlineColor(sf::Color(204, 255, 0, (std::uint8_t)glowAlpha));
-            glow.setOutlineThickness(2.5f * s);
-            m_window.draw(glow);
-        }
+        
 
         // ---- 更新并绘制卡片内容 ----
         bool hover = m_charHover[i].targetYOffset < -0.1f;
@@ -765,7 +753,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     float h = (float)winSize.y;
 
     // 标题
-    drawTitle(L"第 " + std::to_wstring(level) + L" 关" + std::to_wstring(level), 0.05f, winSize);
+    drawTitle(L"第 " + std::to_wstring(level) + L" 关", 0.05f, winSize);
 
     // ---- 左侧: 已获得技能列表 ----
     float leftX = w * 0.05f;
