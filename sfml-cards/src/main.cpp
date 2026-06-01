@@ -172,13 +172,16 @@ int main()
                     int fightHit = renderer.hitTransitionFight(pos, winSize);
 
                     if (poolHit >= 0) {
-                        // 按下卡池卡片 → 开始拖拽
-                        dragSourceType = 1;
-                        dragSourceIndex = poolHit;
-                        dragSkillId = run.acquiredSkills()[poolHit];
-                        dragActive = false;
-                        dragStartX = mw.x;
-                        dragStartY = mw.y;
+                        // 按下卡池卡片 → 已装备的技能不响应拖拽
+                        int sid = run.acquiredSkills()[poolHit];
+                        if (run.equippedSlotOf(sid) < 0) {
+                            dragSourceType = 1;
+                            dragSourceIndex = poolHit;
+                            dragSkillId = sid;
+                            dragActive = false;
+                            dragStartX = mw.x;
+                            dragStartY = mw.y;
+                        }
                     } else if (slHit >= 0 && run.equippedSkills()[slHit] >= 0) {
                         // 按下已装备槽 → 开始拖拽
                         dragSourceType = 2;
@@ -254,13 +257,8 @@ int main()
                                 run.unequipSlot(dragSourceIndex);
                             }
                         }
-                    } else {
-                        // ---- 点击（未拖拽） ----
-                        if (dragSourceType == 2) {
-                            // 点击已装备槽 → 卸载
-                            run.unequipSlot(dragSourceIndex);
-                        }
                     }
+                    // 点击（未拖拽）不处理: 装备/卸载仅通过拖拽完成
 
                     // 清除拖拽状态
                     dragSourceType = 0;
@@ -408,6 +406,11 @@ int main()
         if (screen == Screen::Transition) {
             hoveredAcquiredIdx = renderer.hitTransitionPoolCard(mw, winSize,
                 (int)run.acquiredSkills().size());
+            if (hoveredAcquiredIdx >= 0) {
+                int sid = run.acquiredSkills()[hoveredAcquiredIdx];
+                if (run.equippedSlotOf(sid) >= 0)
+                    hoveredAcquiredIdx = -1;  // 已装备的技能在卡池中悬停不生效
+            }
             hoveredSlotIdx = renderer.hitTransitionSlot(mw, winSize);
             if (dragActive) hoveredAcquiredIdx = -1;
         }

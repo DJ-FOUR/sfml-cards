@@ -929,23 +929,20 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         bool isBeingDragged = isDragging && dragSourceType == 1
                               && dragSourceIndex == (int)i;
 
-        if (isBeingDragged) {
-            // 占位孔
+        if (isBeingDragged || isEquipped) {
+            // 占位孔: 拖拽中或已装备的技能显示为空槽
             drawBeveledRect(m_window, cx, cy, L.cardW, L.cardH, 10.f,
                             sf::Color(20, 20, 20, 60), BORDER_NORMAL, 1.f);
+            if (isEquipped && !isBeingDragged) {
+                // 已装备提示
+                sf::Text equippedHint(m_font, L"已装备", (unsigned)(L.cardH * 0.09f));
+                equippedHint.setFillColor(TEXT_DISABLED);
+                auto ehsz = equippedHint.getGlobalBounds().size;
+                equippedHint.setPosition({cx + (L.cardW - ehsz.x) / 2.f, cy + L.cardH * 0.80f});
+                m_window.draw(equippedHint);
+            }
         } else {
             drawSkillCard(cx, cy, L.cardW, L.cardH, sid, false, hover, winSize);
-
-            // 已装备角标
-            if (isEquipped) {
-                float badgeSz = L.cardW * 0.14f;
-                sf::ConvexShape badge(3);
-                badge.setPoint(0, {cx + L.cardW - badgeSz, cy});
-                badge.setPoint(1, {cx + L.cardW, cy});
-                badge.setPoint(2, {cx + L.cardW, cy + badgeSz});
-                badge.setFillColor(NEON_GREEN);
-                m_window.draw(badge);
-            }
         }
     }
 
@@ -1030,8 +1027,59 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         }
     }
 
+    // ---- 技能说明 (鼠标悬停卡池或装备槽时显示) ----
+    bool showSkillDesc = (hoveredAcquiredIdx >= 0
+                       && hoveredAcquiredIdx < (int)acquiredSkills.size())
+                      || (hoveredSlotIdx >= 0 && equipped[hoveredSlotIdx] >= 0);
+    float descY = slotStartY + slotH + h * 0.005f;
+
+    if (showSkillDesc) {
+        int hoveredSid = -1;
+        if (hoveredAcquiredIdx >= 0 && hoveredAcquiredIdx < (int)acquiredSkills.size())
+            hoveredSid = acquiredSkills[hoveredAcquiredIdx];
+        else if (hoveredSlotIdx >= 0 && equipped[hoveredSlotIdx] >= 0)
+            hoveredSid = equipped[hoveredSlotIdx];
+        if (hoveredSid >= 0 && hoveredSid < SKILL_COUNT) {
+            auto& sk = allSkills[hoveredSid];
+
+            // 说明背景
+            float descW = slotW * 3.f + slotGap * 2.f;
+            float descH = h * 0.065f;
+            sf::RectangleShape descBg({descW, descH});
+            descBg.setPosition({rightX, descY});
+            descBg.setFillColor(sf::Color(15, 15, 15, 200));
+            descBg.setOutlineColor(NEON_GREEN);
+            descBg.setOutlineThickness(1.f);
+            m_window.draw(descBg);
+
+            // 技能名称
+            float nameFont = (unsigned)(h * 0.026f);
+            sf::Text nameText(m_font, sk.name, (unsigned)nameFont);
+            nameText.setFillColor(NEON_GREEN);
+            nameText.setStyle(sf::Text::Bold);
+            nameText.setPosition({rightX + w * 0.01f, descY + descH * 0.05f});
+            m_window.draw(nameText);
+
+            // BUFF / TRIGGER 标签
+            bool isTrig = isTriggerSkill(hoveredSid);
+            std::wstring typeStr = isTrig ? L"TRIGGER" : L"BUFF";
+            sf::Text typeTag(m_font, typeStr, (unsigned)(h * 0.018f));
+            typeTag.setFillColor(isTrig ? sf::Color(255, 180, 80) : sf::Color(100, 200, 255));
+            auto ttsz = nameText.getGlobalBounds().size;
+            typeTag.setPosition({rightX + w * 0.01f + ttsz.x + w * 0.015f,
+                                 descY + descH * 0.08f});
+            m_window.draw(typeTag);
+
+            // 技能描述
+            sf::Text descText(m_font, sk.desc, (unsigned)(h * 0.021f));
+            descText.setFillColor(sf::Color(200, 200, 200));
+            descText.setPosition({rightX + w * 0.01f, descY + descH * 0.50f});
+            m_window.draw(descText);
+        }
+    }
+
     // ---- 敌人预览 ----
-    float enemyY = slotStartY + slotH + h * 0.05f;
+    float enemyY = showSkillDesc ? (descY + h * 0.075f) : (slotStartY + slotH + h * 0.03f);
     sf::Text enemyHeading(m_font, L"敌方继承协议", (unsigned)(h * 0.028f));
     enemyHeading.setFillColor(ENEMY_RED);
     enemyHeading.setPosition({rightX, enemyY});
