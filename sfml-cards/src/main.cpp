@@ -57,6 +57,7 @@ int main()
     // ---- 游戏阶段状态 ----
     bool phaseHandled = false;
     std::vector<int> rewardSkills; // 当前奖励界面的3个技能
+    bool skillToggled[MAX_SKILL_SLOTS] = {}; // 技能槽toggle状态
 
     // ---- 动画帧时间 ----
     sf::Clock animClock;
@@ -73,6 +74,8 @@ int main()
         canPlaySelected = false;
         aiTriggered = false;
         aiClock.restart();
+        renderer.resetSkillSlotAnims();
+        for (auto& t : skillToggled) t = false;
         renderer.startDealAnimation((int)game.playerHand().size());
     };
 
@@ -309,10 +312,17 @@ int main()
                         int skHit = renderer.hitTestSkillSlot(pos3, winSize);
 
                         if (skHit >= 0) {
-                            // 激活技能
                             int skillId = run.equippedSkills()[skHit];
                             if (skillId >= 0) {
-                                game.activatePlayerSkill(skillId);
+                                if (skillToggled[skHit]) {
+                                    game.deactivatePlayerSkill(skillId);
+                                    renderer.setSkillSlotLifted(skHit, false);
+                                    skillToggled[skHit] = false;
+                                } else {
+                                    game.activatePlayerSkill(skillId);
+                                    renderer.setSkillSlotLifted(skHit, true);
+                                    skillToggled[skHit] = true;
+                                }
                             }
                         } else if (btnHit == 1 && canPlaySelected) {
                             auto sorted = selectedIndices;
@@ -320,6 +330,8 @@ int main()
                             if (game.playerPlay(sorted)) {
                                 selectedIndices.clear();
                                 canPlaySelected = false;
+                                renderer.resetSkillSlotAnims();
+                                for (auto& t : skillToggled) t = false;
                                 if (game.phase() == GameState::Phase::ComputerTurn) {
                                     aiClock.restart();
                                     aiTriggered = false;
@@ -330,6 +342,8 @@ int main()
                             game.playerPass();
                             selectedIndices.clear();
                             canPlaySelected = false;
+                            renderer.resetSkillSlotAnims();
+                            for (auto& t : skillToggled) t = false;
                             aiClock.restart();
                             aiTriggered = false;
                         } else if (btnHit == 0) {

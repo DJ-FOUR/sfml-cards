@@ -262,6 +262,11 @@ void Renderer::updateAnimations(float dt)
         m_handCardYOffsets[i] += (m_handCardTargets[i] - m_handCardYOffsets[i]) * CARD_SPEED * dt;
     }
 
+    // 技能槽点击反馈动画: 平滑到目标位置
+    constexpr float SKSLOT_SPEED = 14.0f;
+    for (int i = 0; i < MAX_SKILL_SLOTS; ++i)
+        m_skillSlotY[i] += (m_skillSlotTarget[i] - m_skillSlotY[i]) * SKSLOT_SPEED * dt;
+
     m_shakeTimer += dt;
 
     // 发牌动画更新
@@ -282,6 +287,20 @@ void Renderer::updateAnimations(float dt)
             m_dealActive = false;
             m_dealAnim.clear();
         }
+    }
+}
+
+void Renderer::setSkillSlotLifted(int slotIndex, bool lifted)
+{
+    if (slotIndex >= 0 && slotIndex < MAX_SKILL_SLOTS)
+        m_skillSlotTarget[slotIndex] = lifted ? -18.f : 0.f;
+}
+
+void Renderer::resetSkillSlotAnims()
+{
+    for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
+        m_skillSlotTarget[i] = 0.f;
+        m_skillSlotY[i] = 0.f;
     }
 }
 
@@ -370,13 +389,42 @@ void Renderer::renderCharCardToRT(int charIdx, bool hover)
     passName.setPosition({(cw - pnsz.x) / 2.0f, ch * 0.60f});
     rt.draw(passName);
 
-    // ---- 被动技描述 ----
-    float descF = ch * 0.038f;
-    sf::Text passDesc(m_font, c.passiveDesc, (unsigned)descF);
-    passDesc.setFillColor(sf::Color(200, 200, 200));
-    auto pdsz = passDesc.getGlobalBounds().size;
-    passDesc.setPosition({(cw - pdsz.x) / 2.0f, ch * 0.70f});
-    rt.draw(passDesc);
+    // ---- 被动技描述 (超宽文本自动双行居中) ----
+    float descF = ch * 0.035f;
+    float margin = 28.f;
+    std::wstring descText = c.passiveDesc;
+
+    sf::Text measure(m_font, descText, (unsigned)descF);
+    if (measure.getGlobalBounds().size.x > cw - margin * 2.f) {
+        // 优先在标点处断开
+        size_t split = std::wstring::npos;
+        for (auto brk : {L'，', L',', L' '})
+            if ((split = descText.find(brk)) != std::wstring::npos && split > 0)
+                break;
+        if (split == std::wstring::npos)
+            split = descText.size() / 2;
+
+        std::wstring l1 = descText.substr(0, split + 1);
+        std::wstring l2 = descText.substr(split + 1);
+
+        sf::Text line1(m_font, l1, (unsigned)descF);
+        line1.setFillColor(sf::Color(200, 200, 200));
+        auto sz1 = line1.getGlobalBounds().size;
+        line1.setPosition({(cw - sz1.x) / 2.f, ch * 0.70f});
+        rt.draw(line1);
+
+        sf::Text line2(m_font, l2, (unsigned)descF);
+        line2.setFillColor(sf::Color(200, 200, 200));
+        auto sz2 = line2.getGlobalBounds().size;
+        line2.setPosition({(cw - sz2.x) / 2.f, ch * 0.76f});
+        rt.draw(line2);
+    } else {
+        sf::Text passDesc(m_font, descText, (unsigned)descF);
+        passDesc.setFillColor(sf::Color(200, 200, 200));
+        auto pdsz = passDesc.getGlobalBounds().size;
+        passDesc.setPosition({(cw - pdsz.x) / 2.0f, ch * 0.73f});
+        rt.draw(passDesc);
+    }
 
     rt.display();
 }
@@ -1579,6 +1627,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         float sx = skStartX + i * (skW + skGap);
+        float sy = skY + m_skillSlotY[i]; // 点击反馈动画
         int sid = playerSkillIds[i];
         float skCut = 3.f;
 
@@ -1588,21 +1637,21 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             slotColor = sf::Color(20, 30, 10);
             topBand = NEON_GREEN;
         }
-        drawBeveledRect(m_window, sx, skY, skW, skH, skCut,
+        drawBeveledRect(m_window, sx, sy, skW, skH, skCut,
                         slotColor, BORDER_NORMAL, 1.f);
 
         if (sid >= 0) {
             auto& sk = allSkills[sid];
             // 顶部色带
             sf::RectangleShape tbar({skW - skCut * 2, 6.f});
-            tbar.setPosition({sx + skCut, skY + 2.f});
+            tbar.setPosition({sx + skCut, sy + 2.f});
             tbar.setFillColor(topBand);
             m_window.draw(tbar);
 
             // 线框八角形图标
             float iconSize = skW * 0.28f;
             float iconX = sx + (skW - iconSize) / 2.f;
-            float iconY = skY + skH * 0.10f;
+            float iconY = sy + skH * 0.10f;
             drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), BORDER_NORMAL);
 
             sf::Text iconText(m_font, "S" + std::to_string(sid + 1),
@@ -1619,7 +1668,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             m_skillBtnTexts[i]->setFillColor(sf::Color::White);
             auto tsz = m_skillBtnTexts[i]->getGlobalBounds().size;
             m_skillBtnTexts[i]->setPosition({sx + (skW - tsz.x) / 2.f,
-                                              skY + skH * 0.48f});
+                                              sy + skH * 0.48f});
             m_window.draw(*m_skillBtnTexts[i]);
 
             // 技能类型标签
@@ -1628,12 +1677,12 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             sf::Text infoText(m_font, info, (unsigned)(skW * 0.20f));
             infoText.setFillColor(NEON_GREEN);
             auto csz = infoText.getGlobalBounds().size;
-            infoText.setPosition({sx + (skW - csz.x) / 2.f, skY + skH * 0.78f});
+            infoText.setPosition({sx + (skW - csz.x) / 2.f, sy + skH * 0.78f});
             m_window.draw(infoText);
         } else {
             // 空槽准星
             float cx = sx + skW / 2.f;
-            float cy = skY + skH / 2.f - 4.f;
+            float cy = sy + skH / 2.f - 4.f;
             sf::RectangleShape crossH({skW * 0.20f, 1.f});
             crossH.setPosition({cx - skW * 0.10f, cy});
             crossH.setFillColor(BORDER_NORMAL);
@@ -2099,7 +2148,8 @@ int Renderer::hitTestSkillSlot(const sf::Vector2f& worldPos, sf::Vector2u winSiz
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         float sx = skStartX + i * (skW + skGap);
-        if (sf::FloatRect({sx, skY}, {skW, skH}).contains(worldPos))
+        float sy = skY + m_skillSlotY[i];
+        if (sf::FloatRect({sx, sy}, {skW, skH}).contains(worldPos))
             return i;
     }
     return -1;
