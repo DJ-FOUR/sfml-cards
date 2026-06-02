@@ -79,6 +79,10 @@ public:
     // 角色卡片悬停动画更新
     void updateAnimations(float dt);
 
+    // 技能槽点击反馈动画 (toggle)
+    void setSkillSlotLifted(int slotIndex, bool lifted);
+    void resetSkillSlotAnims();
+
     // 发牌动画
     void startDealAnimation(int cardCount);
     bool isDealAnimating() const { return m_dealActive; }
@@ -149,6 +153,8 @@ private:
     HoverAnimState m_skillHover[3];
     std::vector<float> m_handCardYOffsets;
     std::vector<float> m_handCardTargets;
+    float m_skillSlotY[MAX_SKILL_SLOTS]{};         // 技能槽Y偏移当前值
+    float m_skillSlotTarget[MAX_SKILL_SLOTS]{};    // 技能槽Y偏移目标值
     float m_playBtnHoverScale   = 1.0f;
     float m_passBtnHoverScale   = 1.0f;
     float m_playBtnTargetScale  = 1.0f;

@@ -78,8 +78,9 @@ public:
     // ------- 技能 -------
     const SkillBuffs& playerBuffs() const { return m_playerBuffs; }
 
-    // 玩家激活技能, 返回是否成功
+    // 玩家激活/取消技能, 返回是否成功
     bool activatePlayerSkill(int skillId);
+    bool deactivatePlayerSkill(int skillId);
 
     // 回合结束清理 (清除buff)
     void endPlayerTurnCleanup();

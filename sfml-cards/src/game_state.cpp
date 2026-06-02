@@ -145,24 +145,28 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
             int rest = n - 3;
             if (rest == 0)
                 return HandPattern{HandType::Triple, r, 0, 0};
-            // 有剩余癞子时可作 kicker
-            if (restW > 0 || extra) {
-                if (rest == 1)
-                    return HandPattern{HandType::TriplePlusOne, r, 0, 1};
-                if (rest == 2) {
-                    bool hasPair = false;
-                    for (int k = 0; k < DZ_RANKS; ++k)
-                        if (k != r && freq[k] + (k == wildRank ? restW : 0) >= 2)
-                            { hasPair = true; break; }
-                    if (hasPair)
-                        return HandPattern{HandType::TriplePlusTwo, r, 0, 2};
-                    if (extra)
-                        return HandPattern{HandType::TriplePlusOne, r, 0, 2};
+
+            // 计算除去三条后的剩余牌
+            auto remFreq = freq;
+            remFreq[r] -= std::min(freq[r], 3);
+
+            if (rest == 1)
+                return HandPattern{HandType::TriplePlusOne, r, 0, 1};
+            if (rest == 2) {
+                // 剩余牌能否组成对子 (癞子可作任意点数, 需与三条点数不同)
+                bool hasPair = false;
+                for (int k = 0; k < DZ_RANKS; ++k) {
+                    if (k != r && remFreq[k] + restW >= 2)
+                        { hasPair = true; break; }
                 }
-                if (rest == 3 && extra)
-                    return HandPattern{HandType::TriplePlusOne, r, 0, 3};
+                if (hasPair)
+                    return HandPattern{HandType::TriplePlusTwo, r, 0, 2};
+                if (extra)
+                    return HandPattern{HandType::TriplePlusOne, r, 0, 2};
+                continue;
             }
-            return std::nullopt;
+            if (rest == 3 && extra)
+                return HandPattern{HandType::TriplePlusOne, r, 0, 3};
         }
     }
 
@@ -671,6 +675,24 @@ bool GameState::activatePlayerSkill(int skillId)
     if (m_aiMemory)
         m_aiMemory->recordSkillUse(skillId);
 
+    return true;
+}
+
+bool GameState::deactivatePlayerSkill(int skillId)
+{
+    if (m_phase != Phase::PlayerTurn) return false;
+    if (skillId < 0 || skillId >= SKILL_COUNT) return false;
+
+    switch (skillId) {
+    case 0: m_playerBuffs.bombBoosted = false;      break;
+    case 1: m_s02_active = false;                   break;
+    case 2: m_playerBuffs.straightExtended = false;  break;
+    case 3: m_playerBuffs.pairsExtended = false;     break;
+    case 4: m_playerBuffs.tripleExtraKicker = false; break;
+    case 5: m_playerBuffs.airplaneExtended = false;  break;
+    case 6: m_s07_active = false;                   break;
+    case 7: m_s08_active = false;                   break;
+    }
     return true;
 }
 
