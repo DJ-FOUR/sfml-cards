@@ -45,16 +45,18 @@ Full architecture docs: [AGENTS.md](AGENTS.md) | Gameplay rules: [GAMEPLAY.md](G
 
 ### Screen state machine (`main.cpp`)
 
-`Screen` enum drives the game loop: `MainMenu → CharacterSelect → WildcardSelect(谋略家) → Reward(初始技能) → Transition → Game → Reward → GameOver`. Main menu has "开始游戏" (→ CharacterSelect) and "退出". After character select, the player picks an initial skill (3 random choices), then goes to Transition to equip before the first battle. Each screen has corresponding `draw*`/`hit*` method pairs in the Renderer. State transitions happen in the event handling block of `main.cpp`.
+`Screen` enum drives the game loop: `MainMenu → CharacterSelect → WildcardSelect(谋略家) → Reward(初始技能) → Transition → Game → Reward → GameOver`. Main menu has "开始游戏" (→ CharacterSelect) and "退出". After character select, the player picks an initial skill (3 random choices from 3 skills), then goes to Transition to equip before the first battle. If all 3 skills are already acquired, the Reward screen is skipped and the game goes directly to Transition. Each screen has corresponding `draw*`/`hit*` method pairs in the Renderer. State transitions happen in the event handling block of `main.cpp`.
+
+`Game = GameState{}` is called on all return-to-main-menu paths to fully reset game state (bomb marks, buffs, etc.).
 
 ### Module dependency graph
 
 ```
 main.cpp
   ├── renderer.hpp/cpp    — All SFML drawing + hit-testing (every screen)
-  ├── game_state.hpp/cpp  — Core rules engine: hand classification, comparison, AI, skill activation
+  ├── game_state.hpp/cpp  — Core rules engine: hand classification, comparison, AI, skill effects
   │     ├── card.hpp/cpp  — Card data model, deck creation, image index mapping
-  │     ├── skill.hpp/cpp — Skill definitions (8 skills) + SkillBuffs struct
+  │     ├── skill.hpp/cpp — Skill definitions (3 skills) + SkillBuffs struct
   │     └── ai_memory.hpp/cpp — k-NN learning: records player decisions, guides AI mimicry
   ├── run_state.hpp/cpp   — Run-level state: level #, acquired skills, equipped slots, mirroring
   │     ├── character.hpp/cpp — 3 character definitions with passive abilities
@@ -69,14 +71,24 @@ main.cpp
 
 Image files: `images/card/card{idx}.png`. `cardFromImageIndex()` does the lookup; `createDeck()` builds and shuffles all 54.
 
+### Phase enum
+
+`Phase { PlayerTurn, ComputerTurn, MomentumPlay, PlayerWins, ComputerWins }`. `MomentumPlay` is entered when 连击之势 triggers — player selects 1 card to play freely, then `startNewRound()` + `PlayerTurn`.
+
 ### Hand classification pipeline
 
-`GameState::classifyHand()` is the central rules function. It takes a vector of Cards + optional `SkillBuffs*` and returns `std::optional<HandPattern>`. The SkillBuffs struct carries temporary rule modifications (e.g., `straightExtended` reduces min straight length from 5 to 4). `GameState::beats()` compares two `PlayedCards` using the same buffs.
+`GameState::classifyHand()` is the central rules function. It takes a vector of Cards + optional `SkillBuffs*` and returns `std::optional<HandPattern>`. The SkillBuffs struct carries rule modifications (`straightExtended` reduces min straight length from 5 to 4; `jokerWill` makes Small Joker immune to bombs in `beats()`). `GameState::beats()` (non-static) compares two `PlayedCards`.
 
-**Adding a new skill that modifies hand rules** requires touching three places:
+`classifyHand` also supports wildcards (癞子) via `SkillBuffs::wildcardRank` — cards of that rank substitute for missing pieces in any hand type.
+
+**Adding a new skill that modifies hand rules** requires:
 1. Add a field to `SkillBuffs` (skill.hpp)
-2. Check that field in `classifyHand()` / `beats()` (game_state.cpp)
-3. Set the field in `activatePlayerSkill()` / `enemyActivateSkills()` (game_state.cpp)
+2. Check that field in `classifyHand()` / `beats()` / `findBeatingPlays()` (game_state.cpp)
+3. Set the field in `setPlayerSkillSlots()` and `setEnemySkills()` (game_state.cpp) — all skills are passive
+
+### Guaranteed bomb
+
+`dealCards()` ensures the player always starts with a bomb (4-of-a-kind). After dealing, it checks frequency; if no rank has ≥4 cards, it picks the rank with fewest cards in hand, removes those, and replaces with 4 of that rank from the draw pile (synthesizing if needed).
 
 ### Mirror mechanic
 
@@ -84,11 +96,16 @@ The core roguelike hook: enemies inherit the player's 3 equipped skills from the
 
 ### Skill system
 
-- Skills have **no energy cost and no cooldown**. Players can activate any equipped skill freely during their turn.
-- **Buff-type** skills (0/2/3/4/5): set `SkillBuffs` fields, cleared at end of player turn (`endPlayerTurnCleanup()`).
-- **Trigger-type** skills (1/6/7): set flags (`m_s02_active`, `m_s07_active`, `m_s08_active`), consumed on activation during `applyPostPlayEffects()`. S08 limited to 1/turn via `m_chainBombUsed`.
-- S07 (炸弹馈赠): changed from "+2 energy" to "draw 1 card when playing a bomb" (energy system removed).
-- Enemy skills: no cost or cooldown. `enemyActivateSkills()` decides activation per-skill based on AI learning probabilities.
+- **All skills are PASSIVE** — equip-and-forget, no manual activation needed. Effects apply automatically when equipped via `setPlayerSkillSlots()`.
+- `SkillBuffs` fields (`straightExtended`, `jokerWill`) are set once in `setPlayerSkillSlots()` and persist across turns. `endPlayerTurnCleanup()` re-applies them after clearing.
+- `enemyActivateSkills()` is a no-op; enemy buffs are set once in `setEnemySkills()` and persist.
+- Adding a new passive skill:
+  1. Add `SkillDef` entry in `skill.cpp`
+  2. Add any needed field to `SkillBuffs` (skill.hpp) if it modifies hand rules
+  3. Set the field in `setPlayerSkillSlots()` and `setEnemySkills()` (game_state.cpp)
+  4. Check the field in `classifyHand()` / `beats()` / `findBeatingPlays()` (game_state.cpp)
+- Skill-specific state (e.g., `m_momentumActive`, `m_enemyPassStreak`) is managed in GameState.
+- Renderer shows skill type labels via `skillTypeLabel()` helper.
 
 ### AI learning system (`ai_memory.hpp/cpp`)
 
@@ -116,21 +133,23 @@ Two-component online learning within a single run:
 
 ### AI decision flow (`GameState::computerTakeTurn()`)
 
-1. Enemy activates skills (probabilistic, based on player's usage history).
+1. Enemy activates skills (no-op for passive skills — buffs already set).
 2. If following (not a new round): `findBeatingPlays()` generates all legal beating plays.
 3. Selection: cost-based heuristic (`evaluatePlayCost`: breaking bomb +50, triple +15, pair +3) combined with k-NN memory preference re-ranking.
 4. Bombs/rockets: skipped when hand > 4 cards; prioritized when ≤ 4.
-5. If no beating play: pass, clear buffs, switch to PlayerTurn.
+5. If no beating play: check 连击之势 streak → if ≥2, enter MomentumPlay; otherwise pass, switch to PlayerTurn.
 6. If new round: `findLowestPlay()` tries multi-card combos first (straight → triple+two → triple+one → triple → pair → single).
 
 ### Game UI layout
 
 - Enemy hand cards: top of screen (`computerHandY = h*0.05`)
-- Enemy skills: top, card-proportioned rectangles (dark red, shows BUFF/TRIG label)
+- Enemy skills: top, card-proportioned rectangles (dark red, shows PASV label)
 - Played cards: center area (enemy above, player below)
-- "出牌"/"不出" buttons: centered above player hand cards (`h*0.56`), only visible during PlayerTurn
+- "出牌"/"不出" buttons: centered above player hand cards (`h*0.56`), visible during PlayerTurn and MomentumPlay
 - Player hand cards: bottom (`handCardY = h*0.66`), upright (no fan rotation/arc), straight line layout
-- Player skills: bottom-left corner (`w*0.03`, `h*0.83`), card-proportioned (CARD_W/CARD_H ratio), shows BUFF/TRIG label
+- Player skills: bottom-left corner (`w*0.03`, `h*0.83`), card-proportioned, golden border when skill is actively triggered
+- Bomb marks display: bottom-right (3 dots + "印记 N/3"), only for 炸弹收藏家 character
+- MomentumPlay overlay: dark dim (behind hand cards, hand stays bright), animated skill card center screen (1.5x→0.3x over 0.5s), hint text
 - Dev debug buttons ("我赢"/"我输"): top-left area, only during active gameplay
 - "开始战斗" button (Transition screen): rectangular (`w*0.18 × h*0.09`), green default / magenta hover, text shakes violently on hover
 
@@ -138,7 +157,7 @@ Two-component online learning within a single run:
 
 - Hand cards: smooth float-up animation (`h*0.025f` lift) on hover, golden glow border on selected
 - Play/Pass buttons: scale to 108% on hover (smooth lerp animation)
-- Character select cards: float + scale + 3D perspective tilt
+- Character select cards: float + scale (same as reward skill cards, no 3D tilt)
 - Reward skill cards: float + scale + glow border
 - Fight button (Transition): magenta outline + hazard stripes + text shake (6-frequency sine wave叠加)
 - All animations use `HoverAnimState` struct with lerp-based smoothing (`ANIM_SPEED_CHAR_HOVER = 14.0f` for characters/skills, `ANIM_SPEED_BTN_HOVER = 18.0f` for buttons, `ANIM_SPEED_CARD_HOVER = 16.0f` for hand cards)
@@ -147,7 +166,7 @@ Two-component online learning within a single run:
 
 - `#pragma once` for headers, `enum class` for enums, `constexpr` for compile-time constants
 - Private members prefixed with `m_` (e.g., `m_playerHand`, `m_phase`)
-- Stateless utility functions declared `static` (e.g., `GameState::classifyHand`, `GameState::beats`)
+- Stateless utility functions declared `static` (e.g., `GameState::classifyHand`, `GameState::classifyHandNoWild`). `beats()` is non-static — it needs access to `m_enemyBuffs` for 王牌意志.
 - File-local helpers go in anonymous namespaces in `.cpp` files
 - `std::optional` for nullable returns, `std::unique_ptr` for SFML objects
 - Platform-specific code uses `#ifdef _WIN32`
@@ -157,27 +176,23 @@ Two-component online learning within a single run:
 
 | ID | Name | Passive | Effect |
 |----|------|---------|--------|
-| 0 | 争锋者 | 强袭 | +1 hand size (16 cards instead of 15) |
-| 1 | 谋略家 | 谋定 | Standard hand size (15 cards) |
+| 0 | 炸弹收藏家 | 收藏 | +1 hand size (16 cards); bomb marks: each bomb played → +1 mark, 3 marks → generate a bomb |
+| 1 | 谋略家 | 谋定 | Pick a wildcard rank (癞子) from 3~2 |
 | 2 | 掌控者 | 储备 | +2 hand size (17 cards instead of 15) |
 
 CharacterDef struct: `{id, name, passiveName, passiveDesc, extraCards}`.
+Character 0 passive (bomb collector) is wired via `GameState::setPlayerIsBombCollector(bool)` and tracked in `m_isBombCollector`/`m_bombMarks`.
 
-## Skills (SKILL_COUNT=8)
+## Skills (SKILL_COUNT=3)
 
-| ID | Name | Effect | Type |
-|----|------|--------|------|
-| 0 | 炸弹强化 | Bombs rank +3, can beat same-rank bombs | BUFF |
-| 1 | 火箭冲刺 | Draw 3 cards when playing Rocket | TRIGGER |
-| 2 | 顺子延长 | Min straight length 4 (down from 5) | BUFF |
-| 3 | 连对增幅 | Min consecutive pairs 2 (down from 3) | BUFF |
-| 4 | 三带一强化 | Triple+one/two can carry 1 extra kicker | BUFF |
-| 5 | 飞机连射 | Min airplane groups 1 (down from 2) | BUFF |
-| 6 | 炸弹馈赠 | Draw 1 card when playing a bomb | TRIGGER |
-| 7 | 连环炸弹 | Auto-play a bomb after playing (1/turn) | TRIGGER |
+| ID | Name | Effect |
+|----|------|--------|
+| 0 | 连击之势 | Enemy passes 2 consecutive turns → MomentumPlay: pick 1 card to play freely, then continue turn |
+| 1 | 顺子大师 | Min straight length 4 (down from 5) |
+| 2 | 王牌意志 | Your Small Joker can only be beaten by Big Joker (bombs can't beat it) |
 
-SkillDef struct: `{id, name, desc}`. No energy cost or cooldown fields.
-Buff-type skills (0/2/3/4/5) set `SkillBuffs` fields cleared at turn end. Trigger-type (1/6/7) set flags consumed on activation.
+All skills are `SkillType::PASSIVE` — automatically active when equipped.
+SkillDef struct: `{id, name, desc, type}`. `SkillBuffs` carries `straightExtended` and `jokerWill`.
 
 ## Key constants
 
@@ -185,7 +200,7 @@ Buff-type skills (0/2/3/4/5) set `SkillBuffs` fields cleared at turn end. Trigge
 |----------|-------|----------|
 | `DECK_SIZE` | 54 | card.hpp |
 | `STANDARD_DEAL` | 15 | game_state.cpp |
-| `SKILL_COUNT` | 8 | skill.hpp |
+| `SKILL_COUNT` | 3 | skill.hpp |
 | `MAX_SKILL_SLOTS` | 3 | skill.hpp |
 | `CHAR_COUNT` | 3 | character.hpp |
 | `DEFAULT_W × DEFAULT_H` | 1200×750 | renderer.hpp |

@@ -65,6 +65,8 @@ int main()
     auto resetAndDealGame = [&]() {
         game.setPlayerWildcard(run.wildcardRank());
         game.dealCards(run.extraCards());
+        game.setPlayerIsBombCollector(run.currentCharId() == 0);
+        game.setPlayerSkillSlots(run.equippedSkills());
         if (run.currentLevel() == 1)
             game.setEnemySkills({-1, -1, -1});
         else
@@ -147,9 +149,10 @@ int main()
                             screen = Screen::WildcardSelect;
                         } else {
                             rewardSkills = run.rollRewardSkills();
-                            screen = Screen::Reward;
+                            screen = rewardSkills.empty() ? Screen::Transition : Screen::Reward;
                         }
                     } else if (hit == 9) {
+                        game = GameState{};
                         screen = Screen::MainMenu;
                     }
                 }
@@ -161,7 +164,7 @@ int main()
                     if (hit >= 0 && hit <= 12) {
                         run.setWildcardRank(hit);
                         rewardSkills = run.rollRewardSkills();
-                        screen = Screen::Reward;
+                        screen = rewardSkills.empty() ? Screen::Transition : Screen::Reward;
                     }
                 }
 
@@ -199,6 +202,7 @@ int main()
                         screen = Screen::Game;
                     } else if (fightHit == 9) {
                         aiMemory.clear();
+                        game = GameState{};
                         screen = Screen::MainMenu;
                     }
                 }
@@ -226,6 +230,7 @@ int main()
                     sf::Vector2f pos = window.mapPixelToCoords(btn->position);
                     int hit = renderer.hitGameOver(pos, winSize);
                     if (hit == 1) {
+                        game = GameState{};  // 重置全部状态（含炸弹印记）
                         screen = Screen::MainMenu;
                     }
                 }
@@ -286,6 +291,7 @@ int main()
                         int retHit = renderer.hitTestGameButton(pos2, !game.isNewRound(), winSize);
                         if (retHit == 3) {
                             aiMemory.clear();
+                            game = GameState{};
                             screen = Screen::MainMenu;
                             continue;
                         }
@@ -312,18 +318,7 @@ int main()
                         int skHit = renderer.hitTestSkillSlot(pos3, winSize);
 
                         if (skHit >= 0) {
-                            int skillId = run.equippedSkills()[skHit];
-                            if (skillId >= 0) {
-                                if (skillToggled[skHit]) {
-                                    game.deactivatePlayerSkill(skillId);
-                                    renderer.setSkillSlotLifted(skHit, false);
-                                    skillToggled[skHit] = false;
-                                } else {
-                                    game.activatePlayerSkill(skillId);
-                                    renderer.setSkillSlotLifted(skHit, true);
-                                    skillToggled[skHit] = true;
-                                }
-                            }
+                            // 所有技能均为被动，装备即生效，无需点击
                         } else if (btnHit == 1 && canPlaySelected) {
                             auto sorted = selectedIndices;
                             std::sort(sorted.begin(), sorted.end());
@@ -342,8 +337,6 @@ int main()
                             game.playerPass();
                             selectedIndices.clear();
                             canPlaySelected = false;
-                            renderer.resetSkillSlotAnims();
-                            for (auto& t : skillToggled) t = false;
                             aiClock.restart();
                             aiTriggered = false;
                         } else if (btnHit == 0) {
@@ -357,6 +350,32 @@ int main()
                                     selectedIndices.erase(it);
                                 else
                                     selectedIndices.push_back(idx);
+                            }
+                        }
+                    }
+                }
+
+                // ---- 连击之势: 选1张牌打出 ----
+                if (game.phase() == GameState::Phase::MomentumPlay) {
+                    if (const auto* btn4 = event->getIf<sf::Event::MouseButtonPressed>()) {
+                        if (btn4->button != sf::Mouse::Button::Left) continue;
+
+                        sf::Vector2f pos4 = window.mapPixelToCoords(btn4->position);
+
+                        int btnHit = renderer.hitTestMomentumButton(pos4, winSize);
+                        if (btnHit == 1 && selectedIndices.size() == 1) {
+                            // 打出选中的1张牌
+                            if (game.momentumPlay(selectedIndices[0])) {
+                                selectedIndices.clear();
+                                canPlaySelected = false;
+                            }
+                        } else if (btnHit == 0) {
+                            // 点牌 — 只能选1张 (替换式)
+                            int idx = renderer.hitTestCard(pos4,
+                                (int)game.playerHand().size(), winSize, selectedIndices);
+                            if (idx >= 0) {
+                                selectedIndices.clear();
+                                selectedIndices.push_back(idx);
                             }
                         }
                     }
@@ -379,6 +398,11 @@ int main()
             std::sort(sorted.begin(), sorted.end());
             canPlaySelected = game.canPlay(sorted);
 
+            // 连击之势: 选1张牌即可出牌
+            if (game.phase() == GameState::Phase::MomentumPlay
+                && selectedIndices.size() == 1)
+                canPlaySelected = true;
+
             if (game.phase() == GameState::Phase::ComputerTurn && !aiTriggered) {
                 if (aiClock.getElapsedTime().asSeconds() > 0.8f) {
                     game.computerTakeTurn();
@@ -399,7 +423,7 @@ int main()
                     screen = Screen::Transition;
                 } else {
                     rewardSkills = run.rollRewardSkills();
-                    screen = Screen::Reward;
+                    screen = rewardSkills.empty() ? Screen::Transition : Screen::Reward;
                 }
             }
             if (game.phase() == GameState::Phase::ComputerWins && !phaseHandled) {

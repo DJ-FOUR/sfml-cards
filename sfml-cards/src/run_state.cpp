@@ -81,7 +81,8 @@ void RunState::swapSlots(int a, int b)
 
 std::vector<int> RunState::rollRewardSkills()
 {
-    // 从8个技能中随机选3个 (允许已拥有的技能出现, 由UI处理"已拥有"标记)
+    // 技能系统重新设计后暂时为空
+    if (SKILL_COUNT == 0) return {};
     std::vector<int> pool;
     for (int i = 0; i < SKILL_COUNT; ++i)
         pool.push_back(i);

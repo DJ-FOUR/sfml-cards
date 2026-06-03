@@ -1,5 +1,6 @@
 #include "game_state.hpp"
 #include <algorithm>
+#include <cstdlib>
 
 // 斗地主排序常量
 constexpr int R3 = 0, R4 = 1, R5 = 2, R6 = 3, R7 = 4, R8 = 5, R9 = 6,
@@ -134,8 +135,7 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
     }
 
     // Triple / Triple+1 / Triple+2
-    bool extra = buffs && buffs->tripleExtraKicker;
-    if (n == 3 || n == 4 || n == 5 || (extra && n == 6)) {
+    if (n == 3 || n == 4 || n == 5) {
         if (n == 3 && wildCount == 3)
             return HandPattern{HandType::Triple, wildRank, 0, 0};
         for (int r = 0; r < DZ_RANKS; ++r) {
@@ -161,12 +161,8 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
                 }
                 if (hasPair)
                     return HandPattern{HandType::TriplePlusTwo, r, 0, 2};
-                if (extra)
-                    return HandPattern{HandType::TriplePlusOne, r, 0, 2};
                 continue;
             }
-            if (rest == 3 && extra)
-                return HandPattern{HandType::TriplePlusOne, r, 0, 3};
         }
     }
 
@@ -180,7 +176,7 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
     }
 
     // ConsecutivePairs (连对): 使用癞子填补
-    int minPLen = (buffs && buffs->pairsExtended) ? 2 : 3;
+    constexpr int minPLen = 3;
     if (n >= minPLen * 2 && n % 2 == 0) {
         int pairLen = n / 2;
         for (int start = R3; start + pairLen - 1 <= RA; ++start) {
@@ -190,7 +186,7 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
     }
 
     // Airplane (飞机): 使用癞子填补
-    int minALen = (buffs && buffs->airplaneExtended) ? 1 : 2;
+    constexpr int minALen = 2;
     if (n >= minALen * 3) {
         for (int use = n / 3; use >= minALen; --use) {
             int tripleCards = use * 3;
@@ -265,9 +261,7 @@ std::optional<HandPattern> GameState::classifyHandNoWild(const std::vector<Card>
     }
 
     // Triple / Triple+1 / Triple+2
-    bool extra = buffs && buffs->tripleExtraKicker;
-
-    if (n == 3 || n == 4 || n == 5 || (extra && n == 6)) {
+    if (n == 3 || n == 4 || n == 5) {
         for (int r = 0; r < DZ_RANKS; ++r) {
             if (freq[r] != 3) continue;
             int rest = n - 3;
@@ -281,11 +275,7 @@ std::optional<HandPattern> GameState::classifyHandNoWild(const std::vector<Card>
                     if (k != r && freq[k] == 2) { hasPair = true; break; }
                 if (hasPair)
                     return HandPattern{HandType::TriplePlusTwo, r, 0, 2};
-                if (extra)
-                    return HandPattern{HandType::TriplePlusOne, r, 0, 2};
             }
-            if (rest == 3 && extra)
-                return HandPattern{HandType::TriplePlusOne, r, 0, 3};
             return std::nullopt;
         }
     }
@@ -305,7 +295,7 @@ std::optional<HandPattern> GameState::classifyHandNoWild(const std::vector<Card>
     }
 
     // ConsecutivePairs
-    int minPLen = (buffs && buffs->pairsExtended) ? 2 : 3;
+    constexpr int minPLen = 3;
     if (n >= minPLen * 2 && n % 2 == 0) {
         std::vector<int> pairRanks;
         bool ok = true;
@@ -324,7 +314,7 @@ std::optional<HandPattern> GameState::classifyHandNoWild(const std::vector<Card>
     }
 
     // Airplane
-    int minALen = (buffs && buffs->airplaneExtended) ? 1 : 2;
+    constexpr int minALen = 2;
     if (n >= minALen * 3) {
         std::vector<int> tripleRanks;
         for (int r = R3; r <= R2; ++r)
@@ -371,7 +361,7 @@ std::optional<HandPattern> GameState::classifyHandNoWild(const std::vector<Card>
 // ----- beats (支持技能buff) -----
 
 bool GameState::beats(const PlayedCards& play, const PlayedCards& lastPlay,
-                      const SkillBuffs* buffs)
+                      const SkillBuffs* buffs) const
 {
     auto& p = play.pattern;
     auto& lp = lastPlay.pattern;
@@ -379,7 +369,20 @@ bool GameState::beats(const PlayedCards& play, const PlayedCards& lastPlay,
     if (p.type == HandType::Rocket) return true;
     if (lp.type == HandType::Rocket) return false;
 
-    // S01 bomb boost: bomb beats non-bomb, bombs compare with bonus
+    // Skill 2: 王牌意志 — 防守方的小王免疫炸弹
+    // beats()中防守方永远是电脑 (玩家出牌压电脑)
+    if (m_enemyBuffs.jokerWill) {
+        bool lastHasSJ = false;
+        for (const auto& c : lastPlay.cards) {
+            if (doudizhuOrder(c.rank) == RS) { lastHasSJ = true; break; }
+        }
+        if (lastHasSJ) {
+            if (p.type == HandType::Bomb) return false;
+            if (p.type == HandType::Single && p.mainRank != RB) return false;
+        }
+    }
+
+    // bomb beats non-bomb
     if (p.type == HandType::Bomb && lp.type != HandType::Bomb) return true;
     if (p.type != HandType::Bomb && lp.type == HandType::Bomb) return false;
 
@@ -396,11 +399,7 @@ bool GameState::beats(const PlayedCards& play, const PlayedCards& lastPlay,
         && p.kickerCount != lp.kickerCount)
         return false;
 
-    int bonus = 0;
-    if (buffs && buffs->bombBoosted && p.type == HandType::Bomb)
-        bonus = buffs->bombRankBonus;
-
-    return p.mainRank + bonus > lp.mainRank;
+    return p.mainRank > lp.mainRank;
 }
 
 // ----- GameState: setup / turn logic -----
@@ -418,6 +417,58 @@ void GameState::dealCards(int extraCards)
     sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
     sortByDZ(m_computerHand);
 
+    // 确保玩家手牌中必有炸弹
+    {
+        std::array<int, DZ_RANKS> pfreq{};
+        for (auto& c : m_playerHand)
+            pfreq[doudizhuOrder(c.rank)]++;
+        bool hasBomb = false;
+        for (int r = 0; r < DZ_RANKS; ++r)
+            if (pfreq[r] >= 4) { hasBomb = true; break; }
+        if (!hasBomb) {
+            // 找一个玩家手牌最少的rank来制造炸弹
+            int bestRank = R3;
+            int bestCnt = 99;
+            for (int r = R3; r <= R2; ++r) {
+                if (pfreq[r] < bestCnt) { bestCnt = pfreq[r]; bestRank = r; }
+            }
+            // 从手牌移除该rank的牌
+            m_playerHand.erase(
+                std::remove_if(m_playerHand.begin(), m_playerHand.end(),
+                    [bestRank](const Card& c) {
+                        return doudizhuOrder(c.rank) == bestRank;
+                    }),
+                m_playerHand.end());
+            // 从抽牌堆收集4张该rank的牌
+            int collected = 0;
+            std::vector<Card> bombCards;
+            auto it = m_drawPile.begin();
+            while (it != m_drawPile.end() && collected < 4) {
+                if (doudizhuOrder(it->rank) == bestRank) {
+                    bombCards.push_back(*it);
+                    it = m_drawPile.erase(it);
+                    collected++;
+                } else { ++it; }
+            }
+            auto dzToRank = [](int dz) -> Rank {
+                if (dz == RS) return Rank::SmallJoker;
+                if (dz == RB) return Rank::BigJoker;
+                if (dz == R2) return Rank::Two;
+                return static_cast<Rank>(dz + 3);
+            };
+            while (collected < 4) {
+                Card c;
+                c.rank = dzToRank(bestRank);
+                c.suit = Suit::Spade;
+                c.imageIndex = bestRank * 4 + (collected % 4);
+                bombCards.push_back(c);
+                collected++;
+            }
+            m_playerHand.insert(m_playerHand.end(), bombCards.begin(), bombCards.end());
+            sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
+        }
+    }
+
     m_lastPlay.reset();
     m_lastPlayer = -1;
     m_playerDisplayed.clear();
@@ -425,17 +476,38 @@ void GameState::dealCards(int extraCards)
     m_phase = Phase::PlayerTurn;
 
     m_playerBuffs.clear();
-    m_chainBombUsed = false;
     m_enemyBuffs.clear();
-    m_s02_active = false;
-    m_s07_active = false;
-    m_s08_active = false;
+
+    // 重置技能状态 (炸弹印记跨关卡保留)
+    m_playerSkillSlots = {-1, -1, -1};
+    m_momentumActive = false;
+    m_enemyPassStreak = 0;
 }
 
 void GameState::setEnemySkills(const std::array<int, MAX_SKILL_SLOTS>& skills)
 {
     m_enemySkills = skills;
     m_enemyBuffs.clear();
+    // 自动应用敌人被动技能效果
+    for (int sid : m_enemySkills) {
+        if (sid == 1) m_enemyBuffs.straightExtended = true;
+        if (sid == 2) m_enemyBuffs.jokerWill = true;
+    }
+}
+
+void GameState::setPlayerSkillSlots(const std::array<int, MAX_SKILL_SLOTS>& slots)
+{
+    m_playerSkillSlots = slots;
+    m_playerBuffs.straightExtended = false;
+    m_playerBuffs.jokerWill = false;
+    m_momentumActive = false;
+    m_enemyPassStreak = 0;
+    // 自动应用所有被动技能效果
+    for (int sid : m_playerSkillSlots) {
+        if (sid == 0) m_momentumActive = true;
+        if (sid == 1) m_playerBuffs.straightExtended = true;
+        if (sid == 2) m_playerBuffs.jokerWill = true;
+    }
 }
 
 void GameState::startNewRound()
@@ -480,6 +552,7 @@ bool GameState::playerPlay(const std::vector<int>& handIndices)
 
     // 在修改状态前捕获特征 (用于AI学习)
     bool wasNewRound = !m_lastPlay.has_value();
+    bool wasBeating = m_lastPlay.has_value() && m_lastPlayer == 1;
     int handSizeBefore = (int)m_playerHand.size();
 
     removeIndices(m_playerHand, handIndices);
@@ -487,6 +560,12 @@ bool GameState::playerPlay(const std::vector<int>& handIndices)
     m_computerDisplayed.clear();
     m_lastPlay = play;
     m_lastPlayer = 0;
+
+    // Skill 3: 炸弹收藏家 — 玩家打出炸弹/火箭时记录
+    if (m_isBombCollector) {
+        if (pattern->type == HandType::Bomb || pattern->type == HandType::Rocket)
+            recordBombPlayed();
+    }
 
     if (m_aiMemory) {
         PlayFeatures feat;
@@ -556,6 +635,53 @@ void GameState::playerPass()
     m_phase = Phase::ComputerTurn;
 }
 
+bool GameState::momentumPlay(int handIndex)
+{
+    if (m_phase != Phase::MomentumPlay) return false;
+    if (handIndex < 0 || handIndex >= (int)m_playerHand.size()) return false;
+
+    // 取出选中的1张牌, 作为单牌打出
+    Card chosen = m_playerHand[handIndex];
+    m_playerHand.erase(m_playerHand.begin() + handIndex);
+    sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
+
+    int dzRank = doudizhuOrder(chosen.rank);
+    HandPattern pattern{HandType::Single, dzRank, 0, 0};
+    PlayedCards play{pattern, {chosen}};
+
+    m_playerDisplayed = {chosen};
+    m_computerDisplayed.clear();
+    m_lastPlay = play;
+    m_lastPlayer = 0;
+
+    // 记录AI
+    if (m_aiMemory) {
+        PlayFeatures feat;
+        feat.handSize   = (int)m_playerHand.size() + 1;
+        feat.isNewRound = true;
+        feat.level      = 1;
+        setHasBombRocket(feat, m_playerHand);
+        feat.lastPlayType = -1;
+        feat.lastPlayRank = -1;
+        PlayAction act;
+        act.handType  = (int)HandType::Single;
+        act.mainRank  = dzRank;
+        act.cardCount = 1;
+        act.passed    = false;
+        m_aiMemory->recordPlay(feat, act);
+    }
+
+    if (m_playerHand.empty()) {
+        m_phase = Phase::PlayerWins;
+        return true;
+    }
+
+    // 连击之势牌打出后清空桌面，继续玩家回合
+    startNewRound();
+    m_phase = Phase::PlayerTurn;
+    return true;
+}
+
 bool GameState::canPlay(const std::vector<int>& handIndices) const
 {
     if (m_phase != Phase::PlayerTurn) return false;
@@ -581,96 +707,120 @@ void GameState::drawCards(int count)
     sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
 }
 
-std::vector<int> GameState::findBombInHand() const
+bool GameState::hasPassiveSkill(int skillId) const
 {
-    std::array<int, DZ_RANKS> freq{};
-    for (auto& c : m_playerHand)
-        freq[doudizhuOrder(c.rank)]++;
+    for (int id : m_playerSkillSlots)
+        if (id == skillId) return true;
+    return false;
+}
 
-    for (int r = 0; r < DZ_RANKS; ++r) {
-        if (freq[r] >= 4) {
-            std::vector<int> indices;
-            for (int i = 0; i < (int)m_playerHand.size() && (int)indices.size() < 4; ++i)
-                if (doudizhuOrder(m_playerHand[i].rank) == r)
-                    indices.push_back(i);
-            return indices;
+uint8_t GameState::skillGlowMask(const std::vector<int>& selectedIndices) const
+{
+    uint8_t mask = 0;
+    for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
+        int sid = m_playerSkillSlots[i];
+        if (sid < 0) continue;
+        bool glow = false;
+        switch (sid) {
+        case 0: // 连击之势 — 敌人被压制1次后亮起，触发后熄灭
+            glow = m_momentumActive && (m_enemyPassStreak > 0);
+            break;
+        case 1: // 顺子大师 — 仅当选中4张连续牌(恰好需要技能)时亮起
+            if (m_playerBuffs.straightExtended && selectedIndices.size() == 4) {
+                auto cards = extractCards(m_playerHand, selectedIndices);
+                auto pat = classifyHandNoWild(cards, &m_playerBuffs);
+                glow = pat.has_value() && pat->type == HandType::Straight;
+            }
+            break;
+        case 2: // 王牌意志 — 玩家的小王在场上被保护时亮起
+            if (m_playerBuffs.jokerWill && m_lastPlay.has_value() && m_lastPlayer == 0) {
+                for (auto& c : m_lastPlay->cards) {
+                    if (doudizhuOrder(c.rank) == RS) { glow = true; break; }
+                }
+            }
+            break;
         }
+        if (glow) mask |= (1 << i);
     }
-    return {};
+    return mask;
+}
+
+void GameState::recordBombPlayed()
+{
+    if (!m_isBombCollector) return;
+
+    m_bombMarks++;
+    if (m_bombMarks >= 3) {
+        // 从R3-R2中随机选一个rank生成炸弹
+        static constexpr int bombRankPool[] = {
+            R3, R4, R5, R6, R7, R8, R9, R10, RJ, RQ, RK, RA, R2
+        };
+        constexpr int POOL_SIZE = 13;
+        int chosenDZ = bombRankPool[std::rand() % POOL_SIZE];
+
+        // doudizhuOrder → Rank 转换
+        auto dzToRank = [](int dz) -> Rank {
+            if (dz == RS) return Rank::SmallJoker;
+            if (dz == RB) return Rank::BigJoker;
+            if (dz == R2) return Rank::Two;
+            return static_cast<Rank>(dz + 3);  // R3=0 → Rank::Three=3
+        };
+        Rank targetRank = dzToRank(chosenDZ);
+
+        // 从抽牌堆收集4张该rank的牌
+        int collected = 0;
+        std::vector<Card> bombCards;
+        auto it = m_drawPile.begin();
+        while (it != m_drawPile.end() && collected < 4) {
+            if (doudizhuOrder(it->rank) == chosenDZ) {
+                bombCards.push_back(*it);
+                it = m_drawPile.erase(it);
+                collected++;
+            } else {
+                ++it;
+            }
+        }
+
+        // 抽牌堆不够4张 → 合成
+        while (collected < 4) {
+            Card c;
+            c.rank = targetRank;
+            c.suit = Suit::Spade;
+            c.imageIndex = chosenDZ * 4 + (collected % 4);
+            bombCards.push_back(c);
+            collected++;
+        }
+
+        m_playerHand.insert(m_playerHand.end(), bombCards.begin(), bombCards.end());
+        sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
+        m_bombMarks = 0;
+    }
 }
 
 void GameState::applyPostPlayEffects()
 {
-    auto& lastCards = m_playerDisplayed;
-    if (lastCards.empty()) return;
-
-    auto pattern = classifyHand(lastCards);
-    if (!pattern) return;
-
-    // S02: 火箭冲刺 - 打出火箭额外抽3张
-    if (m_s02_active && pattern->type == HandType::Rocket) {
-        drawCards(3);
-        m_s02_active = false;
-    }
-
-    // S07: 炸弹馈赠 - 打出炸弹抽1张牌
-    if (m_s07_active && pattern->type == HandType::Bomb) {
-        drawCards(1);
-        m_s07_active = false;
-    }
-
-    // S08: 连环炸弹 - 出牌后若手中有炸弹则自动打出 (限1次)
-    if (m_s08_active && !m_chainBombUsed) {
-        auto bombIdx = findBombInHand();
-        if (!bombIdx.empty()) {
-            m_chainBombUsed = true;
-            auto bombCards = extractCards(m_playerHand, bombIdx);
-            auto bombPattern = classifyHand(bombCards);
-            if (bombPattern && bombPattern->type == HandType::Bomb) {
-                removeIndices(m_playerHand, bombIdx);
-                m_playerDisplayed.insert(m_playerDisplayed.end(),
-                                         bombCards.begin(), bombCards.end());
-                PlayedCards bombPlay{*bombPattern, bombCards};
-                m_lastPlay = bombPlay;
-                m_lastPlayer = 0;
-
-                if (m_s07_active) {
-                    drawCards(1);
-                    m_s07_active = false;
-                }
-
-                if (m_playerHand.empty()) {
-                    m_phase = Phase::PlayerWins;
-                }
-            }
-        }
-    }
+    // 效果在主逻辑中内联处理 (playerPlay / computerTakeTurn)
 }
 
 void GameState::endPlayerTurnCleanup()
 {
-    m_playerBuffs.clear();
-    m_chainBombUsed = false;
-    m_s02_active = false;
-    m_s07_active = false;
-    m_s08_active = false;
+    // 被动技能效果不在此清除 — 装备即永久生效
+    // 只保留 wildcardRank (角色被动)
+    int savedWild = m_playerBuffs.wildcardRank;
+    m_playerBuffs = SkillBuffs{};
+    m_playerBuffs.wildcardRank = savedWild;
+    // 重新应用被动技能
+    for (int sid : m_playerSkillSlots) {
+        if (sid == 1) m_playerBuffs.straightExtended = true;
+        if (sid == 2) m_playerBuffs.jokerWill = true;
+    }
 }
 
 bool GameState::activatePlayerSkill(int skillId)
 {
+    // 所有技能均为被动，装备即生效，无需手动激活
     if (m_phase != Phase::PlayerTurn) return false;
     if (skillId < 0 || skillId >= SKILL_COUNT) return false;
-
-    switch (skillId) {
-    case 0: m_playerBuffs.bombBoosted = true;      break;
-    case 1: m_s02_active = true;                   break;
-    case 2: m_playerBuffs.straightExtended = true;  break;
-    case 3: m_playerBuffs.pairsExtended = true;     break;
-    case 4: m_playerBuffs.tripleExtraKicker = true; break;
-    case 5: m_playerBuffs.airplaneExtended = true;  break;
-    case 6: m_s07_active = true;                   break;
-    case 7: m_s08_active = true;                   break;
-    }
 
     if (m_aiMemory)
         m_aiMemory->recordSkillUse(skillId);
@@ -680,19 +830,9 @@ bool GameState::activatePlayerSkill(int skillId)
 
 bool GameState::deactivatePlayerSkill(int skillId)
 {
+    // 被动技能不响应手动关闭
     if (m_phase != Phase::PlayerTurn) return false;
     if (skillId < 0 || skillId >= SKILL_COUNT) return false;
-
-    switch (skillId) {
-    case 0: m_playerBuffs.bombBoosted = false;      break;
-    case 1: m_s02_active = false;                   break;
-    case 2: m_playerBuffs.straightExtended = false;  break;
-    case 3: m_playerBuffs.pairsExtended = false;     break;
-    case 4: m_playerBuffs.tripleExtraKicker = false; break;
-    case 5: m_playerBuffs.airplaneExtended = false;  break;
-    case 6: m_s07_active = false;                   break;
-    case 7: m_s08_active = false;                   break;
-    }
     return true;
 }
 
@@ -700,28 +840,7 @@ bool GameState::deactivatePlayerSkill(int skillId)
 
 void GameState::enemyActivateSkills()
 {
-    if (m_phase != Phase::ComputerTurn) return;
-
-    for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
-        int sid = m_enemySkills[i];
-        if (sid < 0) continue;
-
-        // 查询AI记忆: 玩家使用这个技能的概率
-        float prob = 0.0f;
-        if (m_aiMemory)
-            prob = m_aiMemory->querySkillProb(sid);
-
-        if (prob >= 0.4f) {
-            switch (sid) {
-            case 0: m_enemyBuffs.bombBoosted = true;      break;
-            case 2: m_enemyBuffs.straightExtended = true;  break;
-            case 3: m_enemyBuffs.pairsExtended = true;     break;
-            case 4: m_enemyBuffs.tripleExtraKicker = true; break;
-            case 5: m_enemyBuffs.airplaneExtended = true;  break;
-            default: break;
-            }
-        }
-    }
+    // 被动技能已在 setEnemySkills 中应用, 此处无需操作
 }
 
 // ----- Computer AI -----
@@ -769,7 +888,8 @@ GameState::PlayOption GameState::findLowestPlay(const std::vector<Card>& hand) c
     };
 
     // 1. 顺子 — 优先最长、最低rank的
-    for (int len = std::min(n, 12); len >= 5; --len) {
+    int minSLen = m_enemyBuffs.straightExtended ? 4 : 5;
+    for (int len = std::min(n, 12); len >= minSLen; --len) {
         for (int top = RA; top >= R3 + len - 1; --top) {
             int bottom = top - len + 1;
             std::vector<int> indices;
@@ -987,7 +1107,7 @@ std::vector<GameState::PlayOption> GameState::findBeatingPlays(
 
     case HandType::ConsecutivePairs:
         {
-            int minLen = (b && b->pairsExtended) ? 2 : 3;
+            constexpr int minLen = 3;
             if (tp.length < minLen) break;
             for (int top = tp.mainRank + 1; top <= RA; ++top) {
                 int bottom = top - tp.length + 1;
@@ -1016,7 +1136,7 @@ std::vector<GameState::PlayOption> GameState::findBeatingPlays(
 
     case HandType::Airplane:
         {
-            int minLen = (b && b->airplaneExtended) ? 1 : 2;
+            constexpr int minLen = 2;
             if (tp.length < minLen) break;
             for (int top = tp.mainRank + 1; top <= R2; ++top) {
                 int bottom = top - tp.length + 1;
@@ -1085,7 +1205,6 @@ std::vector<GameState::PlayOption> GameState::findBeatingPlays(
     case HandType::Bomb:
         {
             int threshold = tp.mainRank;
-            if (b && b->bombBoosted) threshold -= b->bombRankBonus;
             for (int r = threshold + 1; r < DZ_RANKS; ++r) {
                 std::vector<int> idx;
                 std::vector<bool> used(n);
@@ -1110,6 +1229,22 @@ std::vector<GameState::PlayOption> GameState::findBeatingPlays(
         break;
     }
 
+    // Skill 2: 王牌意志 — 防守方(玩家)的小王免疫炸弹
+    if (m_playerBuffs.jokerWill) {
+        bool targetHasSJ = false;
+        for (const auto& c : target.cards) {
+            if (doudizhuOrder(c.rank) == RS) { targetHasSJ = true; break; }
+        }
+        if (targetHasSJ) {
+            result.erase(
+                std::remove_if(result.begin(), result.end(),
+                    [](const PlayOption& opt) {
+                        return opt.pattern.type == HandType::Bomb;
+                    }),
+                result.end());
+        }
+    }
+
     return result;
 }
 
@@ -1126,11 +1261,23 @@ std::vector<Card> GameState::computerTakeTurn()
         auto options = findBeatingPlays(*m_lastPlay, m_computerHand, &m_enemyBuffs);
 
         if (options.empty()) {
+            // Skill 0: 连击之势 — 敌人不出牌时累计
+            if (m_momentumActive) {
+                m_enemyPassStreak++;
+                if (m_enemyPassStreak >= 2) {
+                    // 触发! 进入连击之势状态
+                    m_enemyPassStreak = 0;
+                    m_momentumActive = false;
+                    startNewRound();
+                    m_computerDisplayed.clear();
+                    m_playerDisplayed.clear();
+                    m_phase = Phase::MomentumPlay;
+                    return {};
+                }
+            }
             startNewRound();
             m_computerDisplayed.clear();
             m_playerDisplayed.clear();
-            // 清除敌人回合buff
-            m_enemyBuffs.clear();
             m_phase = Phase::PlayerTurn;
             return {};
         }
@@ -1204,8 +1351,15 @@ std::vector<Card> GameState::computerTakeTurn()
         m_lastPlayer = 1;
     }
 
-    // 清除敌人回合buff
-    m_enemyBuffs.clear();
+    // Skill 0: 连击之势 — 敌人出牌则重置不出牌计数
+    m_enemyPassStreak = 0;
+
+    // Skill 3: 炸弹收藏家 — 敌人打出炸弹/火箭时记录
+    if (m_isBombCollector && m_lastPlay.has_value()) {
+        auto& cp = m_lastPlay->pattern;
+        if (cp.type == HandType::Bomb || cp.type == HandType::Rocket)
+            recordBombPlayed();
+    }
 
     if (m_computerHand.empty()) {
         m_phase = Phase::ComputerWins;

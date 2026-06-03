@@ -39,7 +39,7 @@ struct PlayedCards
 class GameState
 {
 public:
-    enum class Phase { PlayerTurn, ComputerTurn, PlayerWins, ComputerWins };
+    enum class Phase { PlayerTurn, ComputerTurn, MomentumPlay, PlayerWins, ComputerWins };
 
     GameState();
 
@@ -49,6 +49,10 @@ public:
     void setEnemySkills(const std::array<int, MAX_SKILL_SLOTS>& skills);
     // 设置玩家癞子点数 (角色被动技)
     void setPlayerWildcard(int rank) { m_playerBuffs.wildcardRank = rank; }
+    // 设置角色被动: 炸弹收藏家
+    void setPlayerIsBombCollector(bool v) { m_isBombCollector = v; }
+    // 设置玩家装备的技能槽 — 自动应用所有被动效果
+    void setPlayerSkillSlots(const std::array<int, MAX_SKILL_SLOTS>& slots);
 
     const std::vector<Card>& playerHand() const   { return m_playerHand; }
     const std::vector<Card>& computerHand() const { return m_computerHand; }
@@ -57,6 +61,9 @@ public:
     // 玩家出牌
     bool playerPlay(const std::vector<int>& handIndices);
     void playerPass();
+
+    // 连击之势: 选1张牌打出
+    bool momentumPlay(int handIndex);
 
     bool canPlay(const std::vector<int>& handIndices) const;
 
@@ -72,8 +79,9 @@ public:
                                                      const SkillBuffs* buffs = nullptr);
     static std::optional<HandPattern> classifyHandNoWild(const std::vector<Card>& cards,
                                                            const SkillBuffs* buffs = nullptr);
-    static bool beats(const PlayedCards& play, const PlayedCards& lastPlay,
-                      const SkillBuffs* buffs = nullptr);
+    // 非静态: 需要访问成员变量 (王牌意志检测防守方buffs)
+    bool beats(const PlayedCards& play, const PlayedCards& lastPlay,
+               const SkillBuffs* buffs = nullptr) const;
 
     // ------- 技能 -------
     const SkillBuffs& playerBuffs() const { return m_playerBuffs; }
@@ -93,9 +101,10 @@ public:
     const std::array<int, MAX_SKILL_SLOTS>& enemySkillSlots() const { return m_enemySkills; }
     const SkillBuffs& enemyBuffs() const { return m_enemyBuffs; }
 
-    // 触发技能标志 (渲染用)
-    bool s02Active() const { return m_s02_active; }
-    bool s08Active() const { return m_s08_active; }
+    // 技能状态查询 (渲染用)
+    bool hasPassiveSkill(int skillId) const;
+    int  playerBombMarks() const { return m_bombMarks; }
+    uint8_t skillGlowMask(const std::vector<int>& selectedIndices) const;
 
     // AI 学习记忆 (由 main.cpp 管理生命周期)
     void setAIMemory(AIMemory* mem) { m_aiMemory = mem; }
@@ -119,12 +128,15 @@ private:
 
     // 技能
     SkillBuffs m_playerBuffs;
-    bool m_chainBombUsed = false;        // S08 每回合限1次
+    std::array<int, MAX_SKILL_SLOTS> m_playerSkillSlots = {-1, -1, -1};
 
-    // 触发技能标记
-    bool m_s02_active = false;  // 火箭冲刺: 打出火箭时抽3张
-    bool m_s07_active = false;  // 炸弹馈赠: 打出炸弹抽1张
-    bool m_s08_active = false;  // 连环炸弹: 出牌后自动出炸弹
+    // Skill 0: 连击之势 (TRIGGER)
+    bool m_momentumActive = false;
+    int  m_enemyPassStreak = 0;   // 敌人连续不出牌计数
+
+    // 角色被动: 炸弹收藏家
+    bool m_isBombCollector = false;
+    int  m_bombMarks = 0;
 
     // 敌人技能
     std::array<int, MAX_SKILL_SLOTS> m_enemySkills = {-1, -1, -1};
@@ -132,6 +144,7 @@ private:
 
     void startNewRound();
     void applyPostPlayEffects();
+    void recordBombPlayed();
 
     struct PlayOption
     {
@@ -148,8 +161,6 @@ private:
     static void removeIndices(std::vector<Card>& hand,
                               const std::vector<int>& indices);
 
-    // 查找炸弹 (用于S08连环炸弹)
-    std::vector<int> findBombInHand() const;
     // 敌人回合开始激活技能
     void enemyActivateSkills();
 

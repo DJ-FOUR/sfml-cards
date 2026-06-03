@@ -31,8 +31,14 @@ constexpr sf::Color TEXT_DISABLED(85, 85, 85);
 constexpr sf::Color ENEMY_RED(255, 51, 51);
 constexpr sf::Color DARK_RED_BG(26, 10, 10);
 
-constexpr bool isTriggerSkill(int skillId) {
-    return skillId == 1 || skillId == 6 || skillId == 7;
+// 技能类型 → 显示标签
+std::wstring skillTypeLabel(SkillType t) {
+    switch (t) {
+        case SkillType::BUFF:    return L"BUFF";
+        case SkillType::TRIGGER: return L"TRIG";
+        case SkillType::PASSIVE: return L"PASV";
+    }
+    return L"";
 }
 
 // 绘制技能八角形图标框
@@ -202,7 +208,7 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
     }
     m_backTexture.setSmooth(true);
 
-    if (!m_bgTexture.loadFromFile("images/background/back0.png")) {
+    if (!m_bgTexture.loadFromFile("images/background/start.png")) {
         std::fprintf(stderr, "Failed to load background\n");
         return false;
     }
@@ -435,9 +441,8 @@ void Renderer::drawBackground(sf::Vector2u winSize)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
-    drawTacticalGrid(m_window, winSize);
 
-    // 若背景图可用，叠极低透明度作为纹理层
+    // 背景图片铺满窗口
     if (m_bgTexture.getSize().x > 0) {
         sf::Sprite bgSprite(m_bgTexture);
         float bgScale = std::max(w / (float)m_bgTexture.getSize().x,
@@ -445,12 +450,10 @@ void Renderer::drawBackground(sf::Vector2u winSize)
         bgSprite.setScale({bgScale, bgScale});
         bgSprite.setPosition({(w - m_bgTexture.getSize().x * bgScale) / 2.f,
                               (h - m_bgTexture.getSize().y * bgScale) / 2.f});
-        bgSprite.setColor(sf::Color(255, 255, 255, 25));
         m_window.draw(bgSprite);
+    } else {
+        m_window.clear(sf::Color(10, 10, 10));
     }
-
-    // 四角安全区标记
-    drawCornerMarkers(m_window, 12.f, 12.f, w - 24.f, h - 24.f, 40.f, NEON_GREEN, 2.f);
 
     // 版本号
     sf::Text ver(m_font, L"v1.0.0_OS", 14);
@@ -660,8 +663,7 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     infoBar.setFillColor(sf::Color(5, 5, 5));
     m_window.draw(infoBar);
 
-    bool isTrigger = isTriggerSkill(skillId);
-    std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
+    std::wstring typeStr = skillTypeLabel(sk.type);
     sf::Text costText(m_font, typeStr, (unsigned)(h * 0.032f));
     costText.setFillColor(sf::Color(136, 136, 136));
     auto csz = costText.getGlobalBounds().size;
@@ -724,43 +726,21 @@ void Renderer::drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mou
         m_charHover[i].targetScale   = hover ? 1.10f : 1.0f;
     }
 
-    // ---- 绘制 3 张角色卡片 ----
+    // ---- 绘制 3 张角色卡片 (与技能牌一致的上浮+缩放动效) ----
     for (int i = 0; i < CHAR_COUNT; ++i) {
         float cx = startX + i * (actualCW + gap);
-        float cardCX = cx + actualCW / 2.0f;
-        float cardCY = startY + actualCH / 2.0f + m_charHover[i].currentYOffset;
-
-        // 只对鼠标实际悬停的卡片计算3D倾斜
-        bool isHovered = m_charHover[i].targetYOffset < -0.1f;
-        float normX = isHovered ? std::clamp((mousePos.x - cardCX) / (actualCW / 2.0f), -1.0f, 1.0f) : 0.0f;
-        float normY = isHovered ? std::clamp((mousePos.y - cardCY) / (actualCH / 2.0f), -1.0f, 1.0f) : 0.0f;
-
         float s = m_charHover[i].currentScale;
-        // 透视投影模拟: 卡片绕Y/X轴旋转 → 余弦压缩
-        // 最大旋转角 ±36°, 强化四角翻转效果
-        constexpr float MAX_TILT = 36.0f * 3.14159265f / 180.0f;
-        float ry = normX * MAX_TILT;  // 绕Y轴
-        float rx = normY * MAX_TILT;  // 绕X轴
-        // 交叉耦合: Y轴旋转主导水平, X轴旋转主导垂直, 但对角位置互相增强
-        float scaleX = s * std::cos(ry) * std::cos(rx * 0.45f);
-        float scaleY = s * std::cos(rx) * std::cos(ry * 0.45f);
-        // 对角位置产生最大位移 (模拟透视中心偏移)
-        float shiftX = normX * actualCW * 0.045f * s;
-        float shiftY = normY * actualCH * 0.025f * s;
+        float curW = actualCW * s;
+        float curH = actualCH * s;
+        float curX = cx + (actualCW - curW) / 2.0f;
+        float curY = startY + (actualCH - curH) / 2.0f + m_charHover[i].currentYOffset;
 
-        
-
-        // ---- 更新并绘制卡片内容 ----
         bool hover = m_charHover[i].targetYOffset < -0.1f;
         renderCharCardToRT(i, hover);
 
         sf::Sprite cardSprite(m_charRT[i].getTexture());
-        cardSprite.setOrigin({CHAR_RT_W / 2.0f, CHAR_RT_H / 2.0f});
-        cardSprite.setPosition({cardCX + shiftX, cardCY + shiftY});
-        cardSprite.setScale({
-            (actualCW / CHAR_RT_W) * scaleX,
-            (actualCH / CHAR_RT_H) * scaleY
-        });
+        cardSprite.setPosition({curX, curY});
+        cardSprite.setScale({curW / CHAR_RT_W, curH / CHAR_RT_H});
         m_window.draw(cardSprite);
     }
 }
@@ -1048,8 +1028,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             slotText.setPosition({sx + (slotW - tsz.x) / 2.f, baseY + slotH * 0.22f});
             m_window.draw(slotText);
 
-            bool isTrigger = isTriggerSkill(drawSid);
-            std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
+            std::wstring typeStr = skillTypeLabel(sk.type);
             sf::Text cost(m_font, typeStr, (unsigned)(slotH * 0.12f));
             cost.setFillColor(TEXT_DIM);
             auto csz = cost.getGlobalBounds().size;
@@ -1108,11 +1087,13 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             nameText.setPosition({rightX + w * 0.01f, descY + descH * 0.05f});
             m_window.draw(nameText);
 
-            // BUFF / TRIGGER 标签
-            bool isTrig = isTriggerSkill(hoveredSid);
-            std::wstring typeStr = isTrig ? L"TRIGGER" : L"BUFF";
+            // 技能类型标签
+            auto st = sk.type;
+            std::wstring typeStr = skillTypeLabel(st);
             sf::Text typeTag(m_font, typeStr, (unsigned)(h * 0.018f));
-            typeTag.setFillColor(isTrig ? sf::Color(255, 180, 80) : sf::Color(100, 200, 255));
+            typeTag.setFillColor(st == SkillType::TRIGGER ? sf::Color(255, 180, 80)
+                               : st == SkillType::PASSIVE ? sf::Color(180, 255, 100)
+                               : sf::Color(100, 200, 255));
             auto ttsz = nameText.getGlobalBounds().size;
             typeTag.setPosition({rightX + w * 0.01f + ttsz.x + w * 0.015f,
                                  descY + descH * 0.08f});
@@ -1347,8 +1328,7 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
         m_window.draw(descText);
 
         // 技能类型
-        bool isTrigger = isTriggerSkill(hoveredSid);
-        std::wstring typeStr = isTrigger ? L"TRIGGER" : L"BUFF";
+        std::wstring typeStr = skillTypeLabel(sk.type);
         sf::Text costText(m_font, typeStr, (unsigned)(panelH * 0.14f));
         costText.setFillColor(sf::Color(150, 150, 150));
         auto csz = costText.getGlobalBounds().size;
@@ -1487,8 +1467,6 @@ void Renderer::drawCard(const Card& card, float x, float y, float scale, bool fa
     sf::Sprite sprite(*tex);
     sprite.setPosition({x, y});
     sprite.setScale({scale, scale});
-    // 统一向绿色调色偏
-    sprite.setColor(sf::Color(220, 255, 180));
     m_window.draw(sprite);
 }
 
@@ -1523,9 +1501,11 @@ void Renderer::drawPlayedCards(const std::vector<Card>& cards, float yCenter,
 void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySelected,
                            sf::Vector2u winSize,
                            const std::array<int, MAX_SKILL_SLOTS>& playerSkillIds,
-                           const sf::Vector2f& mousePos)
+                           const sf::Vector2f& mousePos,
+                           const std::vector<int>& selectedIndices)
 {
     float w = (float)winSize.x;
+    uint8_t glowMask = state.skillGlowMask(selectedIndices);
     float h = (float)winSize.y;
 
     std::wstring statusStr;
@@ -1534,6 +1514,10 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     case GameState::Phase::PlayerTurn:
         statusStr = state.isNewRound() ? L"[STATUS] 新一轮"
                                        : L"[STATUS] 你的回合";
+        statusCol = NEON_GREEN;
+        break;
+    case GameState::Phase::MomentumPlay:
+        statusStr = L"[STATUS] 连击之势";
         statusCol = NEON_GREEN;
         break;
     case GameState::Phase::ComputerTurn:
@@ -1563,6 +1547,27 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
 
     m_statusText->setPosition({stX, stY});
     m_window.draw(*m_statusText);
+
+    // 炸弹收藏家印记显示
+    float bmW = w * 0.07f;
+    float bmH = h * 0.019f;
+    float bmX = w * 0.78f;
+    float bmY = h * 0.965f;
+    int marks = state.playerBombMarks();
+    for (int m = 0; m < 3; ++m) {
+        float bx = bmX + m * (bmH + 4.f);
+        sf::CircleShape dot(bmH / 2.f);
+        dot.setPosition({bx, bmY});
+        dot.setFillColor(m < marks ? sf::Color(255, 80, 30) : sf::Color(60, 60, 60));
+        dot.setOutlineColor(m < marks ? sf::Color(255, 160, 60) : sf::Color(40, 40, 40));
+        dot.setOutlineThickness(1.f);
+        m_window.draw(dot);
+    }
+    sf::Text bmLabel(m_font, L"印记 " + std::to_wstring(marks) + L"/3",
+                     (unsigned)(bmH * 0.9f));
+    bmLabel.setFillColor(marks > 0 ? sf::Color(255, 160, 100) : TEXT_DIM);
+    bmLabel.setPosition({bmX + 3 * (bmH + 4.f) + 6.f, bmY - 2.f});
+    m_window.draw(bmLabel);
 
     // 返回按钮（切角风格）
     {
@@ -1631,14 +1636,17 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         int sid = playerSkillIds[i];
         float skCut = 3.f;
 
+        bool slotGlow = (glowMask >> i) & 1;
         sf::Color slotColor = slotEmptyColor;
         sf::Color topBand = BORDER_NORMAL;
+        sf::Color outlineCol = BORDER_NORMAL;
         if (sid >= 0) {
             slotColor = sf::Color(20, 30, 10);
             topBand = NEON_GREEN;
+            outlineCol = slotGlow ? sf::Color(255, 200, 50) : BORDER_NORMAL;
         }
         drawBeveledRect(m_window, sx, sy, skW, skH, skCut,
-                        slotColor, BORDER_NORMAL, 1.f);
+                        slotColor, outlineCol, slotGlow ? 2.f : 1.f);
 
         if (sid >= 0) {
             auto& sk = allSkills[sid];
@@ -1672,10 +1680,10 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             m_window.draw(*m_skillBtnTexts[i]);
 
             // 技能类型标签
-            bool isTrigger = isTriggerSkill(sid);
-            std::wstring info = isTrigger ? L"TRIG" : L"BUFF";
+            bool isPassiveSlot = (sk.type == SkillType::PASSIVE);
+            std::wstring info = skillTypeLabel(sk.type);
             sf::Text infoText(m_font, info, (unsigned)(skW * 0.20f));
-            infoText.setFillColor(NEON_GREEN);
+            infoText.setFillColor(isPassiveSlot ? sf::Color(180, 255, 100) : NEON_GREEN);
             auto csz = infoText.getGlobalBounds().size;
             infoText.setPosition({sx + (skW - csz.x) / 2.f, sy + skH * 0.78f});
             m_window.draw(infoText);
@@ -1722,8 +1730,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             et.setPosition({ex + (eskW - etsz.x) / 2.f, eskY + eskH * 0.20f});
             m_window.draw(et);
 
-            bool isTrigger = isTriggerSkill(esid);
-            std::wstring typeStr = isTrigger ? L"TRIG" : L"BUFF";
+            std::wstring typeStr = skillTypeLabel(esk.type);
             sf::Text costText(m_font, typeStr, (unsigned)(eskW * 0.20f));
             costText.setFillColor(sf::Color(200, 150, 150));
             auto csz = costText.getGlobalBounds().size;
@@ -1739,7 +1746,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     }
 
     // 出牌/不出按钮 (手牌上方居中, 含悬停缩放动效) — 新风格
-    if (state.phase() == GameState::Phase::PlayerTurn) {
+    bool isMomentum = (state.phase() == GameState::Phase::MomentumPlay);
+    if (state.phase() == GameState::Phase::PlayerTurn || isMomentum) {
         float btnW = w * 0.12f;
         float btnH = h * 0.055f;
         float btnGap = w * 0.03f;
@@ -1753,8 +1761,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         m_passBtnTargetScale = passHover ? 1.08f : 1.0f;
         m_playBtnTargetScale = playHover ? 1.08f : 1.0f;
 
-        // 不出按钮 (左侧) SKIP
-        {
+        // 不出按钮 (左侧) — 连击之势时不显示
+        if (!isMomentum) {
             float px = startX;
             float pw = btnW * m_passBtnHoverScale;
             float ph = btnH * m_passBtnHoverScale;
@@ -1772,9 +1780,9 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             m_window.draw(*m_passBtnText);
         }
 
-        // 出牌按钮 (右侧) EXECUTE
+        // 出牌按钮 — 连击之势时居中
         {
-            float px = startX + btnW + btnGap;
+            float px = isMomentum ? (w - btnW) / 2.f : startX + btnW + btnGap;
             float pw = btnW * m_playBtnHoverScale;
             float ph = btnH * m_playBtnHoverScale;
             float px2 = px + (btnW - pw) / 2.f;
@@ -1784,11 +1792,10 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             drawBeveledRect(m_window, px2, py2, pw, ph, 5.f, pfill, pout, 2.f);
 
             if (playHover && canPlaySelected) {
-                // 顶部斜条纹装饰
                 drawHazardStripes(m_window, px2 + 4.f, py2 + 2.f, pw - 8.f, 3.f, 6.f);
             }
 
-            m_playBtnText->setString(L"执行");
+            m_playBtnText->setString(L"出牌");
             m_playBtnText->setCharacterSize((unsigned)(fontSize * m_playBtnHoverScale));
             m_playBtnText->setFillColor(canPlaySelected ? (playHover ? sf::Color::Black : NEON_GREEN) : sf::Color(85, 85, 0));
             auto plsz = m_playBtnText->getGlobalBounds().size;
@@ -1808,12 +1815,18 @@ void Renderer::renderGame(const GameState& state,
                           const sf::Vector2f& mousePos,
                           float dt)
 {
-    (void)dt;
     float w = (float)winSize.x;
     float h = (float)winSize.y;
     float hs = handScale(h);
     float ps = playedScale(h);
     float hoverLift = h * 0.025f;
+
+    // 连击之势动画计时
+    if (state.phase() == GameState::Phase::MomentumPlay) {
+        m_momentumAnimTimer += dt;
+    } else {
+        m_momentumAnimTimer = 0.f;
+    }
 
     drawBackground(winSize);
 
@@ -1867,6 +1880,14 @@ void Renderer::renderGame(const GameState& state,
         m_window.draw(apl);
     }
     drawPlayedCards(state.lastPlayerPlay(), playerPlayedY(h), ps, winSize);
+
+    // --- 连击之势: 全局变暗 (手牌之前绘制，手牌保持亮度) ---
+    if (state.phase() == GameState::Phase::MomentumPlay) {
+        float fadeT = std::clamp(m_momentumAnimTimer / 0.3f, 0.f, 1.f);
+        sf::RectangleShape dimOverlay({w, h});
+        dimOverlay.setFillColor(sf::Color(0, 0, 0, (uint8_t)(160 * fadeT)));
+        m_window.draw(dimOverlay);
+    }
 
     // --- 玩家手牌 (正面, 含悬停浮动动效) ---
     auto& ph = state.playerHand();
@@ -2038,7 +2059,31 @@ void Renderer::renderGame(const GameState& state,
     m_window.draw(pCount);
 
     // --- UI (含技能/能量) ---
-    drawGameUI(state, !state.isNewRound(), canPlaySelected, winSize, playerSkillIds, mousePos);
+    drawGameUI(state, !state.isNewRound(), canPlaySelected, winSize, playerSkillIds, mousePos, selectedIndices);
+
+    // --- 连击之势: 中央技能卡牌 (手牌之上) ---
+    if (state.phase() == GameState::Phase::MomentumPlay) {
+        // 入场缩放动画: 0→0.5s 从 1.5x 缩小到 0.3x
+        float scaleT = std::clamp(m_momentumAnimTimer / 0.5f, 0.f, 1.f);
+        float ease = 1.f - (1.f - scaleT) * (1.f - scaleT);
+        float curScale = 1.5f - 1.2f * ease;
+
+        float cardW = w * 0.22f * curScale;
+        float cardH = cardW * CARD_H / CARD_W;
+        float cardX = (w - cardW) / 2.f;
+        float cardY = h * 0.18f;
+
+        drawSkillCard(cardX, cardY, cardW, cardH, 0, false, true, winSize);
+
+        // 提示文字 (延迟0.3s后渐显)
+        float hintAlpha = std::clamp((m_momentumAnimTimer - 0.3f) / 0.3f, 0.f, 1.f);
+        sf::Text hint(m_font, L"选择1张手牌打出", (unsigned)(h * 0.032f));
+        hint.setFillColor(sf::Color(204, 255, 0, (uint8_t)(255 * hintAlpha)));
+        hint.setStyle(sf::Text::Bold);
+        auto hsz = hint.getGlobalBounds().size;
+        hint.setPosition({(w - hsz.x) / 2.f, cardY + cardH + h * 0.03f});
+        m_window.draw(hint);
+    }
 }
 
 // ====== 游戏: 点击检测 ======
@@ -2133,6 +2178,19 @@ int Renderer::hitTestGameButton(const sf::Vector2f& worldPos,
         sf::FloatRect passBounds({startX, btnY}, {btnW, btnH});
         if (passBounds.contains(worldPos)) return 2;
     }
+    return 0;
+}
+
+int Renderer::hitTestMomentumButton(const sf::Vector2f& worldPos,
+                                     sf::Vector2u winSize) const
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    float btnW = w * 0.12f;
+    float btnH = h * 0.055f;
+    float btnX = (w - btnW) / 2.f;
+    float btnY = h * 0.56f;
+    if (sf::FloatRect({btnX, btnY}, {btnW, btnH}).contains(worldPos)) return 1;
     return 0;
 }
 
