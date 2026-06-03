@@ -170,11 +170,7 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
                 }
                 if (hasPair)
                     cand = HandPattern{HandType::TriplePlusTwo, r, 0, 2};
-                else if (extra)
-                    cand = HandPattern{HandType::TriplePlusOne, r, 0, 2};
             }
-            else if (rest == 3 && extra)
-                cand = HandPattern{HandType::TriplePlusOne, r, 0, 3};
 
             if (cand && (!bestTriple || r > bestTriple->mainRank))
                 bestTriple = cand;

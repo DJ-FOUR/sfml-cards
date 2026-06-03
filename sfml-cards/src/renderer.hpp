@@ -96,6 +96,13 @@ private:
     sf::Texture m_backTexture;
     sf::Texture m_bgTexture;
 
+    // 背景序列帧动画
+    static constexpr int FRAME_COUNT = 5;
+    sf::Texture m_frameTex[FRAME_COUNT];
+    int   m_frameIndex = 0;
+    float m_frameTimer = 0.f;
+    static constexpr float FRAME_INTERVAL = 0.12f; // 每帧约8fps
+
     // 游戏UI
     std::unique_ptr<sf::Text> m_playerLabel;
     std::unique_ptr<sf::Text> m_computerLabel;

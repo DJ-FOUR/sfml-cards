@@ -214,6 +214,16 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
     }
     m_bgTexture.setSmooth(true);
 
+    // 加载速度线序列帧
+    for (int i = 0; i < FRAME_COUNT; ++i) {
+        std::snprintf(buf, sizeof(buf), "images/frames/speedline%02d.png", i + 1);
+        if (!m_frameTex[i].loadFromFile(buf)) {
+            std::fprintf(stderr, "Failed to load: %s\n", buf);
+            return false;
+        }
+        m_frameTex[i].setSmooth(true);
+    }
+
     m_playerLabel   = std::make_unique<sf::Text>(m_font, L"玩家", 18);
     m_computerLabel = std::make_unique<sf::Text>(m_font, L"镜像AI", 18);
     m_statusText    = std::make_unique<sf::Text>(m_font, L"", 22);
@@ -274,6 +284,13 @@ void Renderer::updateAnimations(float dt)
         m_skillSlotY[i] += (m_skillSlotTarget[i] - m_skillSlotY[i]) * SKSLOT_SPEED * dt;
 
     m_shakeTimer += dt;
+
+    // 背景序列帧动画
+    m_frameTimer += dt;
+    if (m_frameTimer >= FRAME_INTERVAL) {
+        m_frameTimer -= FRAME_INTERVAL;
+        m_frameIndex = (m_frameIndex + 1) % FRAME_COUNT;
+    }
 
     // 发牌动画更新
     if (m_dealActive) {
@@ -453,6 +470,20 @@ void Renderer::drawBackground(sf::Vector2u winSize)
         m_window.draw(bgSprite);
     } else {
         m_window.clear(sf::Color(10, 10, 10));
+    }
+
+    // 速度线序列帧动画 (覆盖在背景上)
+    {
+        auto& frameTex = m_frameTex[m_frameIndex];
+        if (frameTex.getSize().x > 0) {
+            sf::Sprite frameSprite(frameTex);
+            float fScale = std::max(w / (float)frameTex.getSize().x,
+                                    h / (float)frameTex.getSize().y);
+            frameSprite.setScale({fScale, fScale});
+            frameSprite.setPosition({(w - frameTex.getSize().x * fScale) / 2.f,
+                                     (h - frameTex.getSize().y * fScale) / 2.f});
+            m_window.draw(frameSprite);
+        }
     }
 
     // 版本号
