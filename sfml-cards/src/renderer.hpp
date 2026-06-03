@@ -122,7 +122,8 @@ private:
     void drawGameUI(const GameState& state, bool canPass, bool canPlaySelected,
                     sf::Vector2u winSize,
                     const std::array<int, MAX_SKILL_SLOTS>& playerSkillIds,
-                    const sf::Vector2f& mousePos);
+                    const sf::Vector2f& mousePos,
+                    const std::vector<int>& selectedIndices);
 
     // ---- 菜单通用 ----
     sf::FloatRect menuButtonRect(int idx, int total, sf::Vector2u winSize) const;
