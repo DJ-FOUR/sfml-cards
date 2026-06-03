@@ -1520,13 +1520,134 @@ void Renderer::drawPlayedCards(const std::vector<Card>& cards, float yCenter,
 
 // ====== 游戏: UI (含技能/能量) ======
 
+// 斗地主点数 → 显示名
+static const wchar_t* dzRankName(int dzRank) {
+    static const wchar_t* names[] = {
+        L"3", L"4", L"5", L"6", L"7", L"8", L"9", L"10",
+        L"J", L"Q", L"K", L"A", L"2", L"小王", L"大王"
+    };
+    if (dzRank >= 0 && dzRank < 15) return names[dzRank];
+    return L"?";
+}
+// 牌型 → 中文名
+static const wchar_t* handTypeName(HandType t) {
+    switch (t) {
+    case HandType::Single:           return L"单张";
+    case HandType::Pair:             return L"对子";
+    case HandType::Triple:           return L"三条";
+    case HandType::TriplePlusOne:    return L"三带一";
+    case HandType::TriplePlusTwo:    return L"三带二";
+    case HandType::Straight:         return L"顺子";
+    case HandType::ConsecutivePairs: return L"连对";
+    case HandType::Airplane:         return L"飞机";
+    case HandType::Bomb:             return L"炸弹";
+    case HandType::Rocket:           return L"火箭";
+    default:                         return L"";
+    }
+}
+
 void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySelected,
                            sf::Vector2u winSize,
                            const std::array<int, MAX_SKILL_SLOTS>& playerSkillIds,
-                           const sf::Vector2f& mousePos)
+                           const sf::Vector2f& mousePos,
+                           const std::vector<int>& selectedIndices)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
+
+    // ---- 选中牌型预览 ----
+    if (!selectedIndices.empty() && state.phase() == GameState::Phase::PlayerTurn) {
+        // 提取选中牌并分类
+        std::vector<Card> selCards;
+        auto& ph = state.playerHand();
+        for (int idx : selectedIndices)
+            if (idx >= 0 && idx < (int)ph.size())
+                selCards.push_back(ph[idx]);
+        auto pattern = GameState::classifyHand(selCards, &state.playerBuffs());
+
+        std::wstring preview;
+        sf::Color prevCol = sf::Color::Black;
+        if (pattern) {
+            int wildRank = state.playerBuffs().wildcardRank;
+            int mainR = pattern->mainRank;
+            int wc = 0;
+            std::array<int, 15> rf{};
+            for (auto& c : selCards) {
+                int r = doudizhuOrder(c.rank);
+                if (wildRank >= 0 && r == wildRank) wc++;
+                else rf[r]++;
+            }
+
+            auto dn = [](int r) { return std::wstring(dzRankName(r)); };
+
+            switch (pattern->type) {
+            case HandType::Single:
+                preview = L"单张 " + dn(mainR); break;
+            case HandType::Pair:
+                preview = L"对 " + dn(mainR); break;
+            case HandType::Triple:
+                preview = L"三条 " + dn(mainR); break;
+            case HandType::TriplePlusOne: {
+                // 从剩余牌中找kicker
+                int useF = std::min(rf[mainR], 3);
+                int useW = std::max(0, 3 - useF);
+                rf[mainR] -= useF;
+                int rw = wc - useW;
+                int kicker = -1;
+                for (int r = 0; r < 15 && kicker < 0; ++r)
+                    if (rf[r] > 0) kicker = r;
+                if (kicker < 0 && rw > 0) kicker = wildRank;
+                preview = L"三条" + dn(mainR) + L" + 单" + dn(kicker);
+                break;
+            }
+            case HandType::TriplePlusTwo: {
+                int useF = std::min(rf[mainR], 3);
+                int useW = std::max(0, 3 - useF);
+                rf[mainR] -= useF;
+                int rw = wc - useW;
+                int pairR = -1;
+                for (int r = 0; r < 15 && pairR < 0; ++r)
+                    if (r != mainR && rf[r] + rw >= 2) pairR = r;
+                if (pairR < 0) pairR = wildRank;
+                preview = L"三条" + dn(mainR) + L" + 对" + dn(pairR);
+                break;
+            }
+            case HandType::Bomb:
+                preview = L"炸弹 " + dn(mainR); break;
+            case HandType::Rocket:
+                preview = L"火箭"; break;
+            case HandType::Straight: {
+                int start = mainR - pattern->length + 1;
+                preview = L"顺子 " + dn(start) + L"-" + dn(mainR);
+                break;
+            }
+            case HandType::ConsecutivePairs: {
+                int start = mainR - pattern->length + 1;
+                preview = L"连对 " + dn(start) + L"-" + dn(mainR);
+                break;
+            }
+            case HandType::Airplane: {
+                int start = mainR - pattern->length + 1;
+                preview = L"飞机 " + dn(start) + L"-" + dn(mainR);
+                if (pattern->kickerCount > 0)
+                    preview += L" + " + std::to_wstring(pattern->kickerCount) + L"张";
+                break;
+            }
+            default: preview = handTypeName(pattern->type); break;
+            }
+        } else {
+            preview = L"— 无效牌型 —";
+            prevCol = ENEMY_RED;
+        }
+
+        sf::Text prevText(m_font, preview, (unsigned)(h * 0.024f));
+        prevText.setFillColor(prevCol);
+        auto psz = prevText.getGlobalBounds().size;
+        float pvX = (w - psz.x) / 2.f;
+        float pvY = h * 0.81f;
+        prevText.setPosition({pvX, pvY});
+        m_window.draw(prevText);
+    }
 
     std::wstring statusStr;
     sf::Color statusCol = TEXT_DIM;
@@ -2038,7 +2159,7 @@ void Renderer::renderGame(const GameState& state,
     m_window.draw(pCount);
 
     // --- UI (含技能/能量) ---
-    drawGameUI(state, !state.isNewRound(), canPlaySelected, winSize, playerSkillIds, mousePos);
+    drawGameUI(state, !state.isNewRound(), canPlaySelected, winSize, playerSkillIds, mousePos, selectedIndices);
 }
 
 // ====== 游戏: 点击检测 ======
