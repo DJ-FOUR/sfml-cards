@@ -115,79 +115,106 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
             if (freq[r]) return HandPattern{HandType::Single, r, 0, 0};
     }
 
-    // Pair: freq[r] + wildCount >= 2
+    // Pair: freq[r] + wildCount >= 2 (选最高点数)
     if (n == 2) {
         if (wildCount == 2) return HandPattern{HandType::Pair, wildRank, 0, 0};
+        std::optional<HandPattern> bestPair;
         for (int r = 0; r < DZ_RANKS; ++r) {
-            if (freq[r] + wildCount >= 2)
-                return HandPattern{HandType::Pair, r, 0, 0};
+            if (freq[r] + wildCount >= 2) {
+                if (!bestPair || r > bestPair->mainRank)
+                    bestPair = HandPattern{HandType::Pair, r, 0, 0};
+            }
         }
+        if (bestPair) return *bestPair;
         return std::nullopt;
     }
 
-    // Bomb: freq[r] + wildCount >= 4
+    // Bomb: freq[r] + wildCount >= 4 (选最高点数)
     if (n == 4) {
         if (wildCount == 4) return HandPattern{HandType::Bomb, wildRank, 0, 0};
+        std::optional<HandPattern> bestBomb;
         for (int r = 0; r < DZ_RANKS; ++r) {
-            if (freq[r] + wildCount >= 4)
-                return HandPattern{HandType::Bomb, r, 0, 0};
+            if (freq[r] + wildCount >= 4) {
+                if (!bestBomb || r > bestBomb->mainRank)
+                    bestBomb = HandPattern{HandType::Bomb, r, 0, 0};
+            }
         }
+        if (bestBomb) return *bestBomb;
     }
 
     // Triple / Triple+1 / Triple+2
     if (n == 3 || n == 4 || n == 5) {
         if (n == 3 && wildCount == 3)
             return HandPattern{HandType::Triple, wildRank, 0, 0};
+        std::optional<HandPattern> bestTriple;
         for (int r = 0; r < DZ_RANKS; ++r) {
             int wUsed = std::max(0, 3 - freq[r]);
             if (freq[r] + wildCount < 3) continue;
             int restW = wildCount - wUsed;
             int rest = n - 3;
-            if (rest == 0)
-                return HandPattern{HandType::Triple, r, 0, 0};
 
             // 计算除去三条后的剩余牌
             auto remFreq = freq;
             remFreq[r] -= std::min(freq[r], 3);
 
-            if (rest == 1)
-                return HandPattern{HandType::TriplePlusOne, r, 0, 1};
-            if (rest == 2) {
-                // 剩余牌能否组成对子 (癞子可作任意点数, 需与三条点数不同)
+            std::optional<HandPattern> cand;
+            if (rest == 0)
+                cand = HandPattern{HandType::Triple, r, 0, 0};
+            else if (rest == 1)
+                cand = HandPattern{HandType::TriplePlusOne, r, 0, 1};
+            else if (rest == 2) {
                 bool hasPair = false;
                 for (int k = 0; k < DZ_RANKS; ++k) {
                     if (k != r && remFreq[k] + restW >= 2)
                         { hasPair = true; break; }
                 }
                 if (hasPair)
-                    return HandPattern{HandType::TriplePlusTwo, r, 0, 2};
-                continue;
+                    cand = HandPattern{HandType::TriplePlusTwo, r, 0, 2};
+                else if (extra)
+                    cand = HandPattern{HandType::TriplePlusOne, r, 0, 2};
             }
+            else if (rest == 3 && extra)
+                cand = HandPattern{HandType::TriplePlusOne, r, 0, 3};
+
+            if (cand && (!bestTriple || r > bestTriple->mainRank))
+                bestTriple = cand;
         }
+        if (bestTriple) return *bestTriple;
     }
 
     // Straight (顺子): 使用癞子填补缺口
     int minSLen = (buffs && buffs->straightExtended) ? 4 : 5;
     if (n >= minSLen && n <= (RA - R3 + 1)) {
+        std::optional<HandPattern> bestStraight;
         for (int start = R3; start + n - 1 <= RA; ++start) {
-            if (canFormStraight(start, n, freq, wildCount))
-                return HandPattern{HandType::Straight, start + n - 1, n, 0};
+            if (canFormStraight(start, n, freq, wildCount)) {
+                int endR = start + n - 1;
+                if (!bestStraight || endR > bestStraight->mainRank)
+                    bestStraight = HandPattern{HandType::Straight, endR, n, 0};
+            }
         }
+        if (bestStraight) return *bestStraight;
     }
 
     // ConsecutivePairs (连对): 使用癞子填补
     constexpr int minPLen = 3;
     if (n >= minPLen * 2 && n % 2 == 0) {
         int pairLen = n / 2;
+        std::optional<HandPattern> bestPairs;
         for (int start = R3; start + pairLen - 1 <= RA; ++start) {
-            if (canFormPairs(start, pairLen, freq, wildCount))
-                return HandPattern{HandType::ConsecutivePairs, start + pairLen - 1, pairLen, 0};
+            if (canFormPairs(start, pairLen, freq, wildCount)) {
+                int endR = start + pairLen - 1;
+                if (!bestPairs || endR > bestPairs->mainRank)
+                    bestPairs = HandPattern{HandType::ConsecutivePairs, endR, pairLen, 0};
+            }
         }
+        if (bestPairs) return *bestPairs;
     }
 
     // Airplane (飞机): 使用癞子填补
     constexpr int minALen = 2;
     if (n >= minALen * 3) {
+        std::optional<HandPattern> bestPlane;
         for (int use = n / 3; use >= minALen; --use) {
             int tripleCards = use * 3;
             int remain = n - tripleCards;
@@ -201,26 +228,32 @@ std::optional<HandPattern> GameState::classifyHand(const std::vector<Card>& card
                     wUsed += std::max(0, 3 - freq[start + t]);
                 int restW = wildCount - wUsed;
 
+                std::optional<HandPattern> cand;
                 if (remain == 0)
-                    return HandPattern{HandType::Airplane, start + use - 1, use, 0};
-                if (remain == use)  // 带单
-                    return HandPattern{HandType::Airplane, start + use - 1, use, use};
-                if (remain == use * 2) {  // 带对
+                    cand = HandPattern{HandType::Airplane, start + use - 1, use, 0};
+                else if (remain == use)  // 带单
+                    cand = HandPattern{HandType::Airplane, start + use - 1, use, use};
+                else if (remain == use * 2) {  // 带对
                     auto f = freq;
                     for (int t = 0; t < use; ++t)
                         f[start + t] = std::max(0, f[start + t] - 3);
-                    f[wildRank] += restW;
                     int pairCnt = 0;
+                    int wRem = restW;
                     bool bad = false;
                     for (int r = 0; r < DZ_RANKS; ++r) {
-                        if (f[r] == 2) pairCnt++;
-                        else if (f[r] != 0) { bad = true; break; }
+                        if (f[r] == 2) { pairCnt++; continue; }
+                        if (f[r] == 1 && wRem > 0) { pairCnt++; wRem--; continue; }
+                        if (f[r] == 0 && wRem >= 2) { pairCnt++; wRem -= 2; continue; }
+                        if (f[r] != 0) { bad = true; break; }
                     }
                     if (!bad && pairCnt == use)
-                        return HandPattern{HandType::Airplane, start + use - 1, use, use * 2};
+                        cand = HandPattern{HandType::Airplane, start + use - 1, use, use * 2};
                 }
+                if (cand && (!bestPlane || cand->mainRank > bestPlane->mainRank))
+                    bestPlane = cand;
             }
         }
+        if (bestPlane) return *bestPlane;
     }
 
     return std::nullopt;
