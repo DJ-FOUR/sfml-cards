@@ -95,13 +95,7 @@ private:
     std::unordered_map<int, sf::Texture> m_faceTextures;
     sf::Texture m_backTexture;
     sf::Texture m_bgTexture;
-
-    // 背景序列帧动画
-    static constexpr int FRAME_COUNT = 5;
-    sf::Texture m_frameTex[FRAME_COUNT];
-    int   m_frameIndex = 0;
-    float m_frameTimer = 0.f;
-    static constexpr float FRAME_INTERVAL = 0.12f; // 每帧约8fps
+    sf::Texture m_gameBgTexture;
 
     // 游戏UI
     std::unique_ptr<sf::Text> m_playerLabel;
@@ -139,7 +133,7 @@ private:
                         bool enabled, bool hover, sf::Vector2u winSize);
     void drawTitle(const sf::String& text, float yRatio, sf::Vector2u winSize);
 
-    void drawBackground(sf::Vector2u winSize);
+    void drawBackground(sf::Vector2u winSize, bool useGameBg = false);
     void drawBackButton(sf::Vector2u winSize, const sf::Vector2f& mousePos);
 
     // 通用: 技能卡片

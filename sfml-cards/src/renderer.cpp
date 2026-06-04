@@ -31,6 +31,24 @@ constexpr sf::Color TEXT_DISABLED(85, 85, 85);
 constexpr sf::Color ENEMY_RED(255, 51, 51);
 constexpr sf::Color DARK_RED_BG(26, 10, 10);
 
+// ====== 街头潮流风格配色 ======
+constexpr sf::Color STREET_PINK   (255, 20, 147);   // 荧光粉
+constexpr sf::Color STREET_CYAN   (0, 230, 255);    // 青蓝
+constexpr sf::Color STREET_YELLOW (255, 200, 0);    // 橙黄
+constexpr sf::Color STREET_BLACK  (10, 10, 10);     // 极黑底
+constexpr sf::Color OUTLINE_BLACK (0, 0, 0);        // 纯黑描边
+constexpr sf::Color STREET_WHITE  (255, 255, 255);  // 纯白
+
+// 根据技能类型返回街头潮流色
+sf::Color skillTypeStreetColor(SkillType t) {
+    switch (t) {
+        case SkillType::BUFF:    return STREET_PINK;
+        case SkillType::TRIGGER: return STREET_CYAN;
+        case SkillType::PASSIVE: return STREET_YELLOW;
+    }
+    return STREET_WHITE;
+}
+
 // 技能类型 → 显示标签
 std::wstring skillTypeLabel(SkillType t) {
     switch (t) {
@@ -162,6 +180,105 @@ void drawCornerMarkers(sf::RenderWindow& window, float x, float y, float w, floa
     }
 }
 
+// ====== 街头潮流装饰绘制函数 ======
+
+// 绘制五角星（带粗黑描边）
+void drawStar(sf::RenderWindow& window, float cx, float cy, float r,
+              sf::Color fillColor, float outlineThick = 3.f)
+{
+    sf::ConvexShape star(10);
+    for (int i = 0; i < 10; ++i) {
+        float angle = (i * 36.f - 90.f) * 3.14159265f / 180.f;
+        float rad = (i % 2 == 0) ? r : r * 0.4f;
+        star.setPoint(i, {cx + std::cos(angle) * rad, cy + std::sin(angle) * rad});
+    }
+    star.setFillColor(fillColor);
+    if (outlineThick > 0.f) {
+        star.setOutlineColor(OUTLINE_BLACK);
+        star.setOutlineThickness(outlineThick);
+    }
+    window.draw(star);
+}
+
+// 绘制涂鸦喷漆滴落效果
+void drawPaintDrip(sf::RenderWindow& window, float x, float y, float w, float h,
+                   sf::Color color)
+{
+    // 主体椭圆
+    sf::CircleShape drip(w / 2.f);
+    drip.setPosition({x, y});
+    drip.setFillColor(color);
+    drip.setOutlineColor(OUTLINE_BLACK);
+    drip.setOutlineThickness(2.f);
+    window.draw(drip);
+    // 滴落的小圆
+    sf::CircleShape drop(w * 0.15f);
+    drop.setPosition({x + w * 0.35f, y + h * 0.7f});
+    drop.setFillColor(color);
+    drop.setOutlineColor(OUTLINE_BLACK);
+    drop.setOutlineThickness(1.5f);
+    window.draw(drop);
+}
+
+// 绘制波点纹理（局部装饰）
+void drawHalftoneDots(sf::RenderWindow& window, float x, float y, float w, float h,
+                      float dotSize, sf::Color color)
+{
+    float spacing = dotSize * 2.5f;
+    for (float dy = y + spacing; dy < y + h - spacing; dy += spacing) {
+        for (float dx = x + spacing; dx < x + w - spacing; dx += spacing) {
+            sf::CircleShape dot(dotSize);
+            dot.setPosition({dx, dy});
+            dot.setFillColor(color);
+            window.draw(dot);
+        }
+    }
+}
+
+// 绘制锯齿/闪电形边框装饰线
+void drawZigzagBorder(sf::RenderWindow& window, float x, float y, float w,
+                      sf::Color color, float thick = 3.f, float amp = 6.f)
+{
+    sf::VertexArray zig(sf::PrimitiveType::TriangleStrip);
+    int segments = (int)(w / 12.f);
+    float step = w / segments;
+    for (int i = 0; i <= segments; ++i) {
+        float px = x + i * step;
+        float py = y + ((i % 2 == 0) ? -amp : amp);
+        sf::Vertex v1;
+        v1.position = {px, py - thick / 2.f};
+        v1.color = color;
+        zig.append(v1);
+        sf::Vertex v2;
+        v2.position = {px, py + thick / 2.f};
+        v2.color = color;
+        zig.append(v2);
+    }
+    window.draw(zig);
+}
+
+// 绘制粗描边矩形（通用）
+void drawThickOutlineRect(sf::RenderWindow& window, float x, float y, float w, float h,
+                          sf::Color fill, sf::Color outline, float outlineThick)
+{
+    sf::RectangleShape rect({w, h});
+    rect.setPosition({x, y});
+    rect.setFillColor(fill);
+    rect.setOutlineColor(outline);
+    rect.setOutlineThickness(outlineThick);
+    window.draw(rect);
+}
+
+// 根据角色ID返回街头潮流色
+sf::Color charStreetColor(int charIdx) {
+    switch (charIdx) {
+        case 0: return STREET_PINK;
+        case 1: return STREET_CYAN;
+        case 2: return STREET_YELLOW;
+    }
+    return STREET_WHITE;
+}
+
 } // namespace
 
 Renderer::Renderer(sf::RenderWindow& window)
@@ -214,15 +331,11 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
     }
     m_bgTexture.setSmooth(true);
 
-    // 加载速度线序列帧
-    for (int i = 0; i < FRAME_COUNT; ++i) {
-        std::snprintf(buf, sizeof(buf), "images/frames/speedline%02d.png", i + 1);
-        if (!m_frameTex[i].loadFromFile(buf)) {
-            std::fprintf(stderr, "Failed to load: %s\n", buf);
-            return false;
-        }
-        m_frameTex[i].setSmooth(true);
+    if (!m_gameBgTexture.loadFromFile("images/background/back1.png")) {
+        std::fprintf(stderr, "Failed to load game background\n");
+        return false;
     }
+    m_gameBgTexture.setSmooth(true);
 
     m_playerLabel   = std::make_unique<sf::Text>(m_font, L"玩家", 18);
     m_computerLabel = std::make_unique<sf::Text>(m_font, L"镜像AI", 18);
@@ -285,13 +398,6 @@ void Renderer::updateAnimations(float dt)
 
     m_shakeTimer += dt;
 
-    // 背景序列帧动画
-    m_frameTimer += dt;
-    if (m_frameTimer >= FRAME_INTERVAL) {
-        m_frameTimer -= FRAME_INTERVAL;
-        m_frameIndex = (m_frameIndex + 1) % FRAME_COUNT;
-    }
-
     // 发牌动画更新
     if (m_dealActive) {
         m_dealTimer += dt;
@@ -353,6 +459,7 @@ void Renderer::renderCharCardToRT(int charIdx, bool hover)
     float cw = (float)CHAR_RT_W;
     float ch = (float)CHAR_RT_H;
 
+    sf::Color charColor = charStreetColor(charIdx);
     float cut = 12.f;
     // ---- 背景底框（切角矩形） ----
     sf::ConvexShape bg(8);
@@ -360,17 +467,17 @@ void Renderer::renderCharCardToRT(int charIdx, bool hover)
     bg.setPoint(2, {cw, cut}); bg.setPoint(3, {cw, ch - cut});
     bg.setPoint(4, {cw - cut, ch}); bg.setPoint(5, {cut, ch});
     bg.setPoint(6, {0, ch - cut}); bg.setPoint(7, {0, cut});
-    bg.setFillColor(hover ? sf::Color(20, 30, 10) : sf::Color(13, 13, 13));
-    bg.setOutlineColor(hover ? NEON_GREEN : BORDER_NORMAL);
-    bg.setOutlineThickness(hover ? 2.f : 1.f);
+    bg.setFillColor(hover ? sf::Color(charColor.r/4, charColor.g/4, charColor.b/4) : sf::Color(13, 13, 13));
+    bg.setOutlineColor(hover ? charColor : OUTLINE_BLACK);
+    bg.setOutlineThickness(hover ? 4.f : 3.f);
     rt.draw(bg);
 
-    // ---- 顶部角标 OP-0N ----
+    // ---- 顶部角标 OP-0N（角色专属色） ----
     sf::RectangleShape tag({60.f, 22.f});
-    tag.setFillColor(NEON_GREEN);
+    tag.setFillColor(charColor);
     rt.draw(tag);
     sf::Text tagText(m_font, L"OP-0" + std::to_wstring(charIdx + 1), 14);
-    tagText.setFillColor(sf::Color::Black);
+    tagText.setFillColor(OUTLINE_BLACK);
     tagText.setStyle(sf::Text::Bold);
     auto tsz = tagText.getGlobalBounds().size;
     tagText.setPosition({(60.f - tsz.x) / 2.f, (22.f - tsz.y) / 2.f - 2.f});
@@ -383,34 +490,72 @@ void Renderer::renderCharCardToRT(int charIdx, bool hover)
     sf::RectangleShape iconBg({iconSize, iconSize});
     iconBg.setPosition({iconX, iconY});
     iconBg.setFillColor(sf::Color(26, 26, 26));
-    iconBg.setOutlineColor(BORDER_NORMAL);
-    iconBg.setOutlineThickness(1.f);
+    iconBg.setOutlineColor(OUTLINE_BLACK);
+    iconBg.setOutlineThickness(3.f);
     rt.draw(iconBg);
+    // 内部波点纹理装饰
+    float dotSize = 3.f;
+    float spacing = dotSize * 2.5f;
+    for (float dy = iconY + spacing; dy < iconY + iconSize - spacing; dy += spacing) {
+        for (float dx = iconX + spacing; dx < iconX + iconSize - spacing; dx += spacing) {
+            sf::CircleShape dot(dotSize);
+            dot.setPosition({dx, dy});
+            dot.setFillColor(sf::Color(charColor.r/3, charColor.g/3, charColor.b/3));
+            rt.draw(dot);
+        }
+    }
 
     sf::Text avText(m_font, std::to_string(charIdx + 1),
                     (unsigned)(iconSize * 0.45f));
-    avText.setFillColor(NEON_GREEN);
+    avText.setFillColor(charColor);
     auto asz = avText.getGlobalBounds().size;
     avText.setPosition({iconX + (iconSize - asz.x) / 2.0f,
                         iconY + (iconSize - asz.y) / 2.0f});
     rt.draw(avText);
 
-    // ---- 角色名称 ----
+    // ---- 角色名称（粗黑描底） ----
     float nameF = ch * 0.065f;
+    sf::Text nameShadow(m_font, c.name, (unsigned)nameF);
+    nameShadow.setFillColor(OUTLINE_BLACK);
+    nameShadow.setStyle(sf::Text::Bold);
+    auto nsz = nameShadow.getGlobalBounds().size;
+    nameShadow.setPosition({(cw - nsz.x) / 2.0f + 3.f, ch * 0.50f + 3.f});
+    rt.draw(nameShadow);
+
     sf::Text name(m_font, c.name, (unsigned)nameF);
-    name.setFillColor(sf::Color::White);
+    name.setFillColor(STREET_WHITE);
     name.setStyle(sf::Text::Bold);
-    auto nsz = name.getGlobalBounds().size;
     name.setPosition({(cw - nsz.x) / 2.0f, ch * 0.50f});
     rt.draw(name);
 
     // ---- 被动技名 ----
     float passF = ch * 0.05f;
     sf::Text passName(m_font, c.passiveName, (unsigned)passF);
-    passName.setFillColor(sf::Color(255, 200, 100));
+    passName.setFillColor(STREET_YELLOW);
     auto pnsz = passName.getGlobalBounds().size;
     passName.setPosition({(cw - pnsz.x) / 2.0f, ch * 0.60f});
     rt.draw(passName);
+
+    // ---- 卡片四角小星星装饰 ----
+    if (hover) {
+        float starR = 8.f;
+        auto drawStarLocal = [&](float sx, float sy) {
+            sf::ConvexShape star(10);
+            for (int i = 0; i < 10; ++i) {
+                float angle = (i * 36.f - 90.f) * 3.14159265f / 180.f;
+                float rad = (i % 2 == 0) ? starR : starR * 0.4f;
+                star.setPoint(i, {sx + std::cos(angle) * rad, sy + std::sin(angle) * rad});
+            }
+            star.setFillColor(charColor);
+            star.setOutlineColor(OUTLINE_BLACK);
+            star.setOutlineThickness(2.f);
+            rt.draw(star);
+        };
+        drawStarLocal(cut + starR, cut + starR);
+        drawStarLocal(cw - cut - starR, cut + starR);
+        drawStarLocal(cut + starR, ch - cut - starR);
+        drawStarLocal(cw - cut - starR, ch - cut - starR);
+    }
 
     // ---- 被动技描述 (超宽文本自动双行居中) ----
     float descF = ch * 0.035f;
@@ -454,36 +599,35 @@ void Renderer::renderCharCardToRT(int charIdx, bool hover)
 
 // ====== 通用: 背景 ======
 
-void Renderer::drawBackground(sf::Vector2u winSize)
+void Renderer::drawBackground(sf::Vector2u winSize, bool useGameBg)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
 
+    auto& bgTex = useGameBg ? m_gameBgTexture : m_bgTexture;
+
     // 背景图片铺满窗口
-    if (m_bgTexture.getSize().x > 0) {
-        sf::Sprite bgSprite(m_bgTexture);
-        float bgScale = std::max(w / (float)m_bgTexture.getSize().x,
-                                 h / (float)m_bgTexture.getSize().y);
+    if (bgTex.getSize().x > 0) {
+        sf::Sprite bgSprite(bgTex);
+        float bgScale = std::max(w / (float)bgTex.getSize().x,
+                                 h / (float)bgTex.getSize().y);
         bgSprite.setScale({bgScale, bgScale});
-        bgSprite.setPosition({(w - m_bgTexture.getSize().x * bgScale) / 2.f,
-                              (h - m_bgTexture.getSize().y * bgScale) / 2.f});
+        bgSprite.setPosition({(w - bgTex.getSize().x * bgScale) / 2.f,
+                              (h - bgTex.getSize().y * bgScale) / 2.f});
         m_window.draw(bgSprite);
     } else {
         m_window.clear(sf::Color(10, 10, 10));
     }
 
-    // 速度线序列帧动画 (覆盖在背景上)
-    {
-        auto& frameTex = m_frameTex[m_frameIndex];
-        if (frameTex.getSize().x > 0) {
-            sf::Sprite frameSprite(frameTex);
-            float fScale = std::max(w / (float)frameTex.getSize().x,
-                                    h / (float)frameTex.getSize().y);
-            frameSprite.setScale({fScale, fScale});
-            frameSprite.setPosition({(w - frameTex.getSize().x * fScale) / 2.f,
-                                     (h - frameTex.getSize().y * fScale) / 2.f});
-            m_window.draw(frameSprite);
-        }
+    // 非游戏背景时叠加涂鸦装饰层
+    if (!useGameBg) {
+        // 角落小星星
+        drawStar(m_window, w * 0.05f, h * 0.92f, 10.f, STREET_PINK, 2.f);
+        drawStar(m_window, w * 0.95f, h * 0.08f, 12.f, STREET_CYAN, 2.f);
+        drawStar(m_window, w * 0.15f, h * 0.15f, 8.f, STREET_YELLOW, 2.f);
+        drawStar(m_window, w * 0.85f, h * 0.85f, 9.f, STREET_PINK, 2.f);
+        // 底部锯齿装饰
+        drawZigzagBorder(m_window, w * 0.2f, h * 0.96f, w * 0.6f, STREET_CYAN, 3.f, 6.f);
     }
 
     // 版本号
@@ -514,7 +658,7 @@ sf::FloatRect Renderer::menuButtonRect(int idx, int total, sf::Vector2u winSize)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
-    float bw = w * 0.40f;
+    float bw = w * 0.28f;
     float bh = h * 0.07f;
     float gap = h * 0.04f;
     float totalH = total * bh + (total - 1) * gap;
@@ -535,29 +679,27 @@ void Renderer::drawMenuButton(const sf::FloatRect& rect, const sf::String& text,
     float h = rect.size.y;
     float cut = 6.f;
 
-    sf::Color fill = enabled ? (hover ? btnHoverColor : btnColor) : btnDisabledColor;
-    sf::Color outline = enabled ? (hover ? NEON_GREEN : BORDER_NORMAL) : sf::Color(34, 34, 34);
+    sf::Color fill = enabled ? (hover ? STREET_PINK : STREET_BLACK) : btnDisabledColor;
+    sf::Color outline = enabled ? (hover ? OUTLINE_BLACK : OUTLINE_BLACK) : sf::Color(34, 34, 34);
+    float outlineThick = hover ? 4.f : 3.f;
 
-    drawBeveledRect(m_window, x, y, w, h, cut, fill, outline, 2.f);
+    drawBeveledRect(m_window, x, y, w, h, cut, fill, outline, outlineThick);
 
-    // 左侧小型荧光绿方块指示器（悬停时）
+    // 左侧五角星指示器（悬停时）
     if (hover && enabled) {
-        sf::RectangleShape ind({6.f, 6.f});
-        ind.setPosition({x + 12.f, y + (h - 6.f) / 2.f});
-        ind.setFillColor(NEON_GREEN);
-        m_window.draw(ind);
+        drawStar(m_window, x + 18.f, y + h / 2.f, 7.f, STREET_YELLOW, 2.f);
     }
 
-    // 文字描底（黑色偏移）
+    // 文字粗黑描底（偏移 3px）
     sf::Text shadow(m_font, text, (unsigned)(h * 0.45f));
-    shadow.setFillColor(sf::Color::Black);
+    shadow.setFillColor(OUTLINE_BLACK);
     auto sz = shadow.getGlobalBounds().size;
-    shadow.setPosition({x + (w - sz.x) / 2.f + 1.f,
-                        y + (h - sz.y) / 2.f - sz.y * 0.15f + 1.f});
+    shadow.setPosition({x + (w - sz.x) / 2.f + 3.f,
+                        y + (h - sz.y) / 2.f - sz.y * 0.15f + 3.f});
     m_window.draw(shadow);
 
     sf::Text label(m_font, text, (unsigned)(h * 0.45f));
-    label.setFillColor(enabled ? sf::Color::White : TEXT_DISABLED);
+    label.setFillColor(enabled ? STREET_WHITE : TEXT_DISABLED);
     label.setStyle(sf::Text::Bold);
     label.setPosition({x + (w - sz.x) / 2.f,
                        y + (h - sz.y) / 2.f - sz.y * 0.15f});
@@ -580,12 +722,19 @@ void Renderer::drawTitle(const sf::String& text, float yRatio, sf::Vector2u winS
         en = full.substr(pos + 4);
     }
 
-    sf::Text title(m_font, cn, (unsigned)fontSize);
-    title.setFillColor(sf::Color::White);
-    title.setStyle(sf::Text::Bold);
-    auto sz = title.getGlobalBounds().size;
+    // 标题粗黑描底（偏移 4px）
+    sf::Text titleShadow(m_font, cn, (unsigned)fontSize);
+    titleShadow.setFillColor(OUTLINE_BLACK);
+    titleShadow.setStyle(sf::Text::Bold);
+    auto sz = titleShadow.getGlobalBounds().size;
     float tx = (w - sz.x) / 2.f;
     float ty = h * yRatio;
+    titleShadow.setPosition({tx + 4.f, ty + 4.f});
+    m_window.draw(titleShadow);
+
+    sf::Text title(m_font, cn, (unsigned)fontSize);
+    title.setFillColor(STREET_WHITE);
+    title.setStyle(sf::Text::Bold);
     title.setPosition({tx, ty});
     m_window.draw(title);
 
@@ -599,10 +748,10 @@ void Renderer::drawTitle(const sf::String& text, float yRatio, sf::Vector2u winS
         m_window.draw(sub);
     }
 
-    // 荧光绿底线
-    sf::RectangleShape underline({sz.x * 1.2f, 3.f});
-    underline.setFillColor(NEON_GREEN);
-    underline.setPosition({tx - sz.x * 0.1f, ty + sz.y + 8.f});
+    // 荧光粉粗底线（6px）
+    sf::RectangleShape underline({sz.x * 1.2f, 6.f});
+    underline.setFillColor(STREET_PINK);
+    underline.setPosition({tx - sz.x * 0.1f, ty + sz.y + 10.f});
     m_window.draw(underline);
 }
 
@@ -638,53 +787,74 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     }
 
     auto& sk = skills[skillId];
+    sf::Color typeColor = skillTypeStreetColor(sk.type);
 
-    // 底色（切角矩形）
-    sf::Color fill = owned ? skillCardOwned : (hover ? skillCardHover : skillCardColor);
-    sf::Color outline = hover ? NEON_GREEN : BORDER_NORMAL;
-    drawBeveledRect(m_window, x, y, w, h, cut, fill, outline, hover ? 2.f : 1.f);
+    // 底色（切角矩形）— 根据技能类型使用街头潮流色
+    sf::Color fill = owned ? skillCardOwned
+                   : (hover ? sf::Color(typeColor.r/5, typeColor.g/5, typeColor.b/5) : STREET_BLACK);
+    sf::Color outline = hover ? typeColor : OUTLINE_BLACK;
+    drawBeveledRect(m_window, x, y, w, h, cut, fill, outline, hover ? 4.f : 3.f);
 
-    // 顶部色带
+    // 顶部色带 — 跟随技能类型色
     sf::RectangleShape topBar({w - cut * 2, h * 0.04f});
     topBar.setPosition({x + cut, y + 2.f});
-    topBar.setFillColor(hover ? NEON_GREEN : sf::Color(26, 26, 26));
+    topBar.setFillColor(hover ? typeColor : sf::Color(26, 26, 26));
     m_window.draw(topBar);
 
-    // 已拥有角标
+    // 已拥有角标 — 荧光粉底黑字粗描边
     if (owned) {
         sf::RectangleShape ownedTag({w * 0.28f, h * 0.045f});
         ownedTag.setPosition({x + 2.f, y + 4.f});
-        ownedTag.setFillColor(NEON_GREEN);
+        ownedTag.setFillColor(STREET_PINK);
+        ownedTag.setOutlineColor(OUTLINE_BLACK);
+        ownedTag.setOutlineThickness(2.f);
         m_window.draw(ownedTag);
         sf::Text ownedText(m_font, L"OWNED", (unsigned)(h * 0.035f));
-        ownedText.setFillColor(sf::Color::Black);
+        ownedText.setFillColor(OUTLINE_BLACK);
         ownedText.setStyle(sf::Text::Bold);
         auto osz = ownedText.getGlobalBounds().size;
         ownedText.setPosition({x + (w * 0.28f - osz.x) / 2.f, y + 4.f + (h * 0.045f - osz.y) / 2.f - 2.f});
         m_window.draw(ownedText);
     }
 
-    // [IMG-SKILL-S01~S08] 技能图标占位（线框八角形）
+    // [IMG-SKILL-S01~S08] 技能图标占位（线框八角形 + 内部波点）
     float iconSize = w * 0.30f;
     float iconX = x + (w - iconSize) / 2.f;
     float iconY = y + h * 0.08f;
-    drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), BORDER_NORMAL);
+    drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), OUTLINE_BLACK, 3.f);
+    // 内部波点纹理
+    float dotSize = iconSize * 0.06f;
+    float spacing = dotSize * 2.5f;
+    for (float dy = iconY + spacing; dy < iconY + iconSize - spacing; dy += spacing) {
+        for (float dx = iconX + spacing; dx < iconX + iconSize - spacing; dx += spacing) {
+            sf::CircleShape dot(dotSize);
+            dot.setPosition({dx, dy});
+            dot.setFillColor(sf::Color(typeColor.r/4, typeColor.g/4, typeColor.b/4));
+            m_window.draw(dot);
+        }
+    }
 
     sf::Text iconText(m_font, "S" + std::to_string(skillId + 1),
                       (unsigned)(iconSize * 0.38f));
-    iconText.setFillColor(NEON_GREEN);
+    iconText.setFillColor(typeColor);
     auto isz = iconText.getGlobalBounds().size;
     iconText.setPosition({x + (w - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
     m_window.draw(iconText);
 
-    // 技能名 — 居中于图标和底部信息栏之间
+    // 技能名 — 居中于图标和底部信息栏之间（粗黑描底）
     float iconBot = iconY + iconSize;
     float infoTop = y + h - h * 0.065f;
     float nameF = h * 0.10f;
+    sf::Text nameShadow(m_font, sk.name, (unsigned)nameF);
+    nameShadow.setFillColor(OUTLINE_BLACK);
+    nameShadow.setStyle(sf::Text::Bold);
+    auto nsz = nameShadow.getGlobalBounds().size;
+    nameShadow.setPosition({x + (w - nsz.x) / 2.f + 2.f, (iconBot + infoTop - nsz.y) / 2.f + 2.f});
+    m_window.draw(nameShadow);
+
     sf::Text name(m_font, sk.name, (unsigned)nameF);
-    name.setFillColor(sf::Color::White);
+    name.setFillColor(STREET_WHITE);
     name.setStyle(sf::Text::Bold);
-    auto nsz = name.getGlobalBounds().size;
     name.setPosition({x + (w - nsz.x) / 2.f, (iconBot + infoTop - nsz.y) / 2.f});
     m_window.draw(name);
 
@@ -696,7 +866,7 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
 
     std::wstring typeStr = skillTypeLabel(sk.type);
     sf::Text costText(m_font, typeStr, (unsigned)(h * 0.032f));
-    costText.setFillColor(sf::Color(136, 136, 136));
+    costText.setFillColor(typeColor);
     auto csz = costText.getGlobalBounds().size;
     costText.setPosition({x + (w - csz.x) / 2.f, y + h - h * 0.058f});
     m_window.draw(costText);
@@ -840,12 +1010,12 @@ void Renderer::drawWildcardSelect(sf::Vector2u winSize, const sf::Vector2f& mous
         float curX = cx + (cardW - curW) / 2.0f;
         float curY = baseY + (cardH - curH) / 2.0f + (hover ? -h * 0.025f : 0.0f);
 
-        sf::Color fill = hover ? sf::Color(20, 30, 10) : sf::Color(13, 13, 13);
-        sf::Color outline = hover ? NEON_GREEN : BORDER_NORMAL;
-        drawBeveledRect(m_window, curX, curY, curW, curH, 6.f, fill, outline, hover ? 2.f : 1.f);
+        sf::Color fill = hover ? sf::Color(STREET_CYAN.r/5, STREET_CYAN.g/5, STREET_CYAN.b/5) : STREET_BLACK;
+        sf::Color outline = hover ? STREET_CYAN : OUTLINE_BLACK;
+        drawBeveledRect(m_window, curX, curY, curW, curH, 6.f, fill, outline, hover ? 4.f : 3.f);
 
         sf::Text rankText(m_font, WILDCARD_RANK_NAMES[i], (unsigned)(curH * 0.42f));
-        rankText.setFillColor(hover ? NEON_GREEN : sf::Color(220, 220, 220));
+        rankText.setFillColor(hover ? STREET_CYAN : sf::Color(220, 220, 220));
         rankText.setStyle(sf::Text::Bold);
         auto tsz = rankText.getGlobalBounds().size;
         rankText.setPosition({curX + (curW - tsz.x) / 2.0f, curY + (curH - tsz.y) / 2.0f});
@@ -940,7 +1110,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
                                int dragSourceType, int dragSourceIndex,
                                int dragSkillId, bool isDragging)
 {
-    drawBackground(winSize);
+    drawBackground(winSize, true);
     drawBackButton(winSize, mousePos);
 
     float w = (float)winSize.x;
@@ -968,9 +1138,9 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     float poolBgH = totalRows * L.cardH + (totalRows - 1) * L.rowGap + h * 0.03f;
     sf::RectangleShape poolBg({poolBgW, poolBgH});
     poolBg.setPosition({L.poolX - w * 0.02f, L.poolY - h * 0.015f});
-    poolBg.setFillColor(poolHighlight ? sf::Color(20, 26, 15, 180) : sf::Color(10, 10, 10, 120));
-    poolBg.setOutlineColor(poolHighlight ? NEON_GREEN : BORDER_NORMAL);
-    poolBg.setOutlineThickness(poolHighlight ? 1.5f : 0.5f);
+    poolBg.setFillColor(poolHighlight ? sf::Color(STREET_CYAN.r/6, STREET_CYAN.g/6, STREET_CYAN.b/6, 180) : sf::Color(10, 10, 10, 120));
+    poolBg.setOutlineColor(poolHighlight ? STREET_CYAN : OUTLINE_BLACK);
+    poolBg.setOutlineThickness(3.f);
     m_window.draw(poolBg);
 
     for (size_t i = 0; i < acquiredSkills.size(); ++i) {
@@ -1039,21 +1209,30 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         // 被拖出时显示空槽样式
         int drawSid = isBeingDraggedFrom ? -1 : sid;
 
-        sf::Color sfill = drawSid >= 0 ? slotFilledColor
-                          : (highlight ? sf::Color(26, 26, 10) : slotEmptyColor);
-        sf::Color soutline = highlight ? NEON_GREEN : BORDER_NORMAL;
+        sf::Color sfill = slotEmptyColor;
+        sf::Color soutline = OUTLINE_BLACK;
+        if (drawSid >= 0) {
+            auto& sk = allSkills[drawSid];
+            sf::Color tc = skillTypeStreetColor(sk.type);
+            sfill = sf::Color(tc.r/6, tc.g/6, tc.b/6);
+            soutline = highlight ? tc : OUTLINE_BLACK;
+        } else if (highlight) {
+            sfill = sf::Color(26, 26, 10);
+            soutline = STREET_YELLOW;
+        }
         drawBeveledRect(m_window, sx, baseY, slotW, slotH, slotCut,
-                        sfill, soutline, highlight ? 2.f : 1.f);
+                        sfill, soutline, highlight ? 4.f : 3.f);
 
         if (drawSid >= 0) {
             auto& sk = allSkills[drawSid];
+            sf::Color tc = skillTypeStreetColor(sk.type);
             sf::RectangleShape sbar({slotW - slotCut * 2, 6.f});
             sbar.setPosition({sx + slotCut, baseY + 2.f});
-            sbar.setFillColor(NEON_GREEN);
+            sbar.setFillColor(tc);
             m_window.draw(sbar);
 
             sf::Text slotText(m_font, sk.name, (unsigned)(slotH * 0.15f));
-            slotText.setFillColor(sf::Color::White);
+            slotText.setFillColor(STREET_WHITE);
             slotText.setStyle(sf::Text::Bold);
             auto tsz = slotText.getGlobalBounds().size;
             slotText.setPosition({sx + (slotW - tsz.x) / 2.f, baseY + slotH * 0.22f});
@@ -1061,7 +1240,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
 
             std::wstring typeStr = skillTypeLabel(sk.type);
             sf::Text cost(m_font, typeStr, (unsigned)(slotH * 0.12f));
-            cost.setFillColor(TEXT_DIM);
+            cost.setFillColor(tc);
             auto csz = cost.getGlobalBounds().size;
             cost.setPosition({sx + (slotW - csz.x) / 2.f, baseY + slotH * 0.60f});
             m_window.draw(cost);
@@ -1103,17 +1282,18 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             // 说明背景
             float descW = slotW * 3.f + slotGap * 2.f;
             float descH = h * 0.065f;
+            sf::Color tc = skillTypeStreetColor(sk.type);
             sf::RectangleShape descBg({descW, descH});
             descBg.setPosition({rightX, descY});
             descBg.setFillColor(sf::Color(15, 15, 15, 200));
-            descBg.setOutlineColor(NEON_GREEN);
-            descBg.setOutlineThickness(1.f);
+            descBg.setOutlineColor(tc);
+            descBg.setOutlineThickness(3.f);
             m_window.draw(descBg);
 
             // 技能名称
             float nameFont = (unsigned)(h * 0.026f);
             sf::Text nameText(m_font, sk.name, (unsigned)nameFont);
-            nameText.setFillColor(NEON_GREEN);
+            nameText.setFillColor(tc);
             nameText.setStyle(sf::Text::Bold);
             nameText.setPosition({rightX + w * 0.01f, descY + descH * 0.05f});
             m_window.draw(nameText);
@@ -1122,9 +1302,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
             auto st = sk.type;
             std::wstring typeStr = skillTypeLabel(st);
             sf::Text typeTag(m_font, typeStr, (unsigned)(h * 0.018f));
-            typeTag.setFillColor(st == SkillType::TRIGGER ? sf::Color(255, 180, 80)
-                               : st == SkillType::PASSIVE ? sf::Color(180, 255, 100)
-                               : sf::Color(100, 200, 255));
+            typeTag.setFillColor(tc);
             auto ttsz = nameText.getGlobalBounds().size;
             typeTag.setPosition({rightX + w * 0.01f + ttsz.x + w * 0.015f,
                                  descY + descH * 0.08f});
@@ -1132,7 +1310,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
 
             // 技能描述
             sf::Text descText(m_font, sk.desc, (unsigned)(h * 0.021f));
-            descText.setFillColor(sf::Color(200, 200, 200));
+            descText.setFillColor(sf::Color(220, 220, 220));
             descText.setPosition({rightX + w * 0.01f, descY + descH * 0.50f});
             m_window.draw(descText);
         }
@@ -1141,7 +1319,8 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     // ---- 敌人预览 ----
     float enemyY = showSkillDesc ? (descY + h * 0.075f) : (slotStartY + slotH + h * 0.03f);
     sf::Text enemyHeading(m_font, L"敌方继承协议", (unsigned)(h * 0.028f));
-    enemyHeading.setFillColor(ENEMY_RED);
+    enemyHeading.setFillColor(STREET_PINK);
+    enemyHeading.setStyle(sf::Text::Bold);
     enemyHeading.setPosition({rightX, enemyY});
     m_window.draw(enemyHeading);
 
@@ -1168,9 +1347,6 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     }
 
     // ---- 开始战斗按钮 ----
-    constexpr sf::Color MAGENTA(255, 0, 128);
-    constexpr sf::Color MAGENTA_BG(30, 5, 20);
-
     float btnW = w * 0.18f;
     float btnH = h * 0.09f;
     float btnX = (w - btnW) / 2.f;
@@ -1178,10 +1354,10 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     float btnCut = 8.f;
     bool fightHover = sf::FloatRect({btnX, btnY}, {btnW, btnH}).contains(mousePos);
 
-    sf::Color btnFill = fightHover ? MAGENTA_BG : sf::Color(10, 20, 5);
-    sf::Color btnOutline = fightHover ? MAGENTA : NEON_GREEN;
+    sf::Color btnFill = fightHover ? STREET_PINK : STREET_YELLOW;
+    sf::Color btnOutline = OUTLINE_BLACK;
     drawBeveledRect(m_window, btnX, btnY, btnW, btnH, btnCut,
-                    btnFill, btnOutline, fightHover ? 2.5f : 2.f);
+                    btnFill, btnOutline, 4.f);
 
     if (fightHover) {
         drawHazardStripes(m_window, btnX, btnY + 2.f, btnW, 4.f, 8.f);
@@ -1190,7 +1366,7 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
 
     float fontSize = btnH * 0.35f;
     sf::Text fightText(m_font, L"开始战斗", (unsigned)fontSize);
-    fightText.setFillColor(fightHover ? MAGENTA : NEON_GREEN);
+    fightText.setFillColor(fightHover ? STREET_WHITE : OUTLINE_BLACK);
     fightText.setStyle(sf::Text::Bold);
     auto fsz = fightText.getGlobalBounds().size;
     float baseX = btnX + (btnW - fsz.x) / 2.f;
@@ -1292,7 +1468,7 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                            const std::vector<int>& skillIds,
                            const std::vector<int>& acquiredSkills)
 {
-    drawBackground(winSize);
+    drawBackground(winSize, true);
     drawTitle(acquiredSkills.empty() ? L"获取协议" : L"奖励结算", 0.07f, winSize);
 
     float w = (float)winSize.x;
@@ -1335,19 +1511,20 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
         float panelY = h * 0.70f;
         float cut = 8.f;
 
+        sf::Color tc = skillTypeStreetColor(sk.type);
         drawBeveledRect(m_window, panelX, panelY, panelW, panelH, cut,
-                        sf::Color(10, 13, 8), NEON_GREEN, 1.5f);
+                        sf::Color(10, 13, 8), tc, 3.f);
 
-        // 顶部色带
-        sf::RectangleShape topBar({panelW - cut * 2, 4.f});
+        // 顶部色带（6px 粗）
+        sf::RectangleShape topBar({panelW - cut * 2, 6.f});
         topBar.setPosition({panelX + cut, panelY + 2.f});
-        topBar.setFillColor(NEON_GREEN);
+        topBar.setFillColor(tc);
         m_window.draw(topBar);
 
         // 编号 + 技能名
         std::wstring header = L"S0" + std::to_wstring(hoveredSid + 1) + L"  " + sk.name;
         sf::Text headerText(m_font, header, (unsigned)(panelH * 0.18f));
-        headerText.setFillColor(NEON_GREEN);
+        headerText.setFillColor(tc);
         headerText.setStyle(sf::Text::Bold);
         headerText.setPosition({panelX + panelW * 0.04f, panelY + panelH * 0.12f});
         m_window.draw(headerText);
@@ -1361,7 +1538,7 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
         // 技能类型
         std::wstring typeStr = skillTypeLabel(sk.type);
         sf::Text costText(m_font, typeStr, (unsigned)(panelH * 0.14f));
-        costText.setFillColor(sf::Color(150, 150, 150));
+        costText.setFillColor(tc);
         auto csz = costText.getGlobalBounds().size;
         costText.setPosition({panelX + panelW - csz.x - panelW * 0.05f,
                               panelY + panelH - csz.y - panelH * 0.12f});
@@ -1408,6 +1585,8 @@ void Renderer::drawGameOver(sf::Vector2u winSize, const sf::Vector2f& mousePos,
     sf::Text errText(m_font, L"ERROR", (unsigned)(h * 0.06f));
     errText.setFillColor(sf::Color(255, 51, 51, (std::uint8_t)errAlpha));
     errText.setStyle(sf::Text::Bold);
+    errText.setOutlineColor(OUTLINE_BLACK);
+    errText.setOutlineThickness(3.f);
     auto esz = errText.getGlobalBounds().size;
     errText.setPosition({(w - esz.x) / 2.f, h * 0.14f});
     m_window.draw(errText);
@@ -1415,31 +1594,34 @@ void Renderer::drawGameOver(sf::Vector2u winSize, const sf::Vector2f& mousePos,
     // "任务失败 // MISSION FAILED"
     float loseFont = h * 0.10f;
     sf::Text loseText(m_font, L"任务失败", (unsigned)loseFont);
-    loseText.setFillColor(NEON_GREEN);
+    loseText.setFillColor(STREET_WHITE);
     loseText.setStyle(sf::Text::Bold);
-    // 黑色粗描底
+    // 纯黑粗描底（4px 偏移）
     sf::Text loseShadow(m_font, L"任务失败", (unsigned)loseFont);
-    loseShadow.setFillColor(sf::Color::Black);
+    loseShadow.setFillColor(OUTLINE_BLACK);
     loseShadow.setStyle(sf::Text::Bold);
     auto lsz = loseText.getGlobalBounds().size;
-    loseShadow.setPosition({(w - lsz.x) / 2.f + 3.f, h * 0.22f + 3.f});
+    loseShadow.setPosition({(w - lsz.x) / 2.f + 4.f, h * 0.22f + 4.f});
     m_window.draw(loseShadow);
     loseText.setPosition({(w - lsz.x) / 2.f, h * 0.22f});
     m_window.draw(loseText);
+
+    // 底部青蓝色锯齿装饰线
+    drawZigzagBorder(m_window, (w - lsz.x * 1.3f) / 2.f, h * 0.22f + lsz.y + 12.f,
+                     lsz.x * 1.3f, STREET_CYAN, 4.f, 8.f);
 
     // 终端日志风格统计
     float logY = h * 0.38f;
     float logGap = h * 0.045f;
     auto drawLog = [&](const std::wstring& line, int idx) {
-        sf::Text gt(m_font, L"> ", (unsigned)(h * 0.032f));
-        gt.setFillColor(NEON_GREEN);
-        auto gsz = gt.getGlobalBounds().size;
-        gt.setPosition({w * 0.30f, logY + idx * logGap});
-        m_window.draw(gt);
+        // 黄色星星前缀替代 >
+        float starX = w * 0.30f;
+        float starY = logY + idx * logGap + h * 0.012f;
+        drawStar(m_window, starX + 6.f, starY, 7.f, STREET_YELLOW, 2.f);
 
         sf::Text lt(m_font, line, (unsigned)(h * 0.032f));
-        lt.setFillColor(TEXT_DIM);
-        lt.setPosition({w * 0.30f + gsz.x + 6.f, logY + idx * logGap});
+        lt.setFillColor(STREET_CYAN);
+        lt.setPosition({w * 0.30f + 22.f, logY + idx * logGap});
         m_window.draw(lt);
     };
     drawLog(L"到达关卡 : LEVEL " + std::to_wstring(levelReached), 0);
@@ -1665,23 +1847,23 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     case GameState::Phase::PlayerTurn:
         statusStr = state.isNewRound() ? L"[STATUS] 新一轮"
                                        : L"[STATUS] 你的回合";
-        statusCol = NEON_GREEN;
+        statusCol = STREET_CYAN;
         break;
     case GameState::Phase::MomentumPlay:
         statusStr = L"[STATUS] 连击之势";
-        statusCol = NEON_GREEN;
+        statusCol = STREET_CYAN;
         break;
     case GameState::Phase::ComputerTurn:
         statusStr = L"[STATUS] 敌方运算中";
-        statusCol = ENEMY_RED;
+        statusCol = STREET_PINK;
         break;
     case GameState::Phase::PlayerWins:
         statusStr = L"[STATUS] 任务完成";
-        statusCol = NEON_GREEN;
+        statusCol = STREET_YELLOW;
         break;
     case GameState::Phase::ComputerWins:
         statusStr = L"[STATUS] 任务失败";
-        statusCol = ENEMY_RED;
+        statusCol = STREET_PINK;
         break;
     }
     m_statusText->setString(statusStr);
@@ -1699,25 +1881,25 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     m_statusText->setPosition({stX, stY});
     m_window.draw(*m_statusText);
 
-    // 炸弹收藏家印记显示
+    // 炸弹收藏家印记显示（荧光粉星星图标）
     float bmW = w * 0.07f;
     float bmH = h * 0.019f;
     float bmX = w * 0.78f;
     float bmY = h * 0.965f;
     int marks = state.playerBombMarks();
     for (int m = 0; m < 3; ++m) {
-        float bx = bmX + m * (bmH + 4.f);
-        sf::CircleShape dot(bmH / 2.f);
-        dot.setPosition({bx, bmY});
-        dot.setFillColor(m < marks ? sf::Color(255, 80, 30) : sf::Color(60, 60, 60));
-        dot.setOutlineColor(m < marks ? sf::Color(255, 160, 60) : sf::Color(40, 40, 40));
-        dot.setOutlineThickness(1.f);
-        m_window.draw(dot);
+        float bx = bmX + m * (bmH + 8.f);
+        float starR = bmH * 0.6f;
+        if (m < marks) {
+            drawStar(m_window, bx + starR, bmY + starR, starR, STREET_PINK, 2.f);
+        } else {
+            drawStar(m_window, bx + starR, bmY + starR, starR, sf::Color(60, 60, 60), 1.f);
+        }
     }
     sf::Text bmLabel(m_font, L"印记 " + std::to_wstring(marks) + L"/3",
                      (unsigned)(bmH * 0.9f));
-    bmLabel.setFillColor(marks > 0 ? sf::Color(255, 160, 100) : TEXT_DIM);
-    bmLabel.setPosition({bmX + 3 * (bmH + 4.f) + 6.f, bmY - 2.f});
+    bmLabel.setFillColor(marks > 0 ? STREET_PINK : TEXT_DIM);
+    bmLabel.setPosition({bmX + 3 * (bmH + 8.f) + 6.f, bmY - 2.f});
     m_window.draw(bmLabel);
 
     // 返回按钮（切角风格）
@@ -1728,7 +1910,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         float rh = h * 0.045f;
         bool rHover = sf::FloatRect({rx, ry}, {rw, rh}).contains(mousePos);
         drawBeveledRect(m_window, rx, ry, rw, rh, 4.f,
-                        btnColor, rHover ? NEON_GREEN : BORDER_NORMAL, 1.f);
+                        btnColor, rHover ? STREET_CYAN : OUTLINE_BLACK, 3.f);
 
         m_returnBtnText->setString(L"返回");
         m_returnBtnText->setCharacterSize((unsigned)(rh * 0.38f));
@@ -1773,11 +1955,11 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     float panelW = skW * 3 + skGap * 2 + 16.f;
     float panelH = skH + 28.f;
 
-    // 整体切角面板
+    // 整体切角面板（3px 纯黑描边）
     drawBeveledRect(m_window, skStartX - 8.f, skY - 22.f, panelW, panelH, 6.f,
-                    sf::Color(10, 10, 10), BORDER_NORMAL, 1.f);
+                    sf::Color(10, 10, 10), OUTLINE_BLACK, 3.f);
     sf::Text slotPanelLabel(m_font, L"装备槽", (unsigned)(h * 0.018f));
-    slotPanelLabel.setFillColor(sf::Color(136, 136, 136));
+    slotPanelLabel.setFillColor(STREET_CYAN);
     slotPanelLabel.setPosition({skStartX - 4.f, skY - 20.f});
     m_window.draw(slotPanelLabel);
 
@@ -1790,14 +1972,16 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         bool slotGlow = (glowMask >> i) & 1;
         sf::Color slotColor = slotEmptyColor;
         sf::Color topBand = BORDER_NORMAL;
-        sf::Color outlineCol = BORDER_NORMAL;
+        sf::Color outlineCol = OUTLINE_BLACK;
         if (sid >= 0) {
-            slotColor = sf::Color(20, 30, 10);
-            topBand = NEON_GREEN;
-            outlineCol = slotGlow ? sf::Color(255, 200, 50) : BORDER_NORMAL;
+            auto& sk = allSkills[sid];
+            sf::Color tc = skillTypeStreetColor(sk.type);
+            slotColor = sf::Color(tc.r/6, tc.g/6, tc.b/6);
+            topBand = tc;
+            outlineCol = slotGlow ? STREET_YELLOW : OUTLINE_BLACK;
         }
         drawBeveledRect(m_window, sx, sy, skW, skH, skCut,
-                        slotColor, outlineCol, slotGlow ? 2.f : 1.f);
+                        slotColor, outlineCol, slotGlow ? 4.f : 3.f);
 
         if (sid >= 0) {
             auto& sk = allSkills[sid];
@@ -1811,11 +1995,11 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             float iconSize = skW * 0.28f;
             float iconX = sx + (skW - iconSize) / 2.f;
             float iconY = sy + skH * 0.10f;
-            drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), BORDER_NORMAL);
+            drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), OUTLINE_BLACK, 2.f);
 
             sf::Text iconText(m_font, "S" + std::to_string(sid + 1),
                               (unsigned)(iconSize * 0.38f));
-            iconText.setFillColor(NEON_GREEN);
+            iconText.setFillColor(topBand);
             auto isz = iconText.getGlobalBounds().size;
             iconText.setPosition({sx + (skW - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
             m_window.draw(iconText);
@@ -1831,10 +2015,9 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             m_window.draw(*m_skillBtnTexts[i]);
 
             // 技能类型标签
-            bool isPassiveSlot = (sk.type == SkillType::PASSIVE);
             std::wstring info = skillTypeLabel(sk.type);
             sf::Text infoText(m_font, info, (unsigned)(skW * 0.20f));
-            infoText.setFillColor(isPassiveSlot ? sf::Color(180, 255, 100) : NEON_GREEN);
+            infoText.setFillColor(topBand);
             auto csz = infoText.getGlobalBounds().size;
             infoText.setPosition({sx + (skW - csz.x) / 2.f, sy + skH * 0.78f});
             m_window.draw(infoText);
@@ -1868,10 +2051,10 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         float ex = eskX + i * (eskW + eskGap);
         float ec = 2.f;
 
-        sf::Color efill = (esid >= 0) ? sf::Color(60, 30, 30)
+        sf::Color efill = (esid >= 0) ? sf::Color(80, 20, 40)
                           : sf::Color(17, 17, 17);
-        sf::Color eout = (esid >= 0) ? ENEMY_RED : BORDER_NORMAL;
-        drawBeveledRect(m_window, ex, eskY, eskW, eskH, ec, efill, eout, 1.f);
+        sf::Color eout = (esid >= 0) ? STREET_PINK : OUTLINE_BLACK;
+        drawBeveledRect(m_window, ex, eskY, eskW, eskH, ec, efill, eout, 3.f);
 
         if (esid >= 0) {
             auto& esk = allSkills[esid];
@@ -1919,13 +2102,13 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             float ph = btnH * m_passBtnHoverScale;
             float px2 = px + (btnW - pw) / 2.f;
             float py2 = btnY + (btnH - ph) / 2.f;
-            sf::Color pfill = canPass ? (passHover ? sf::Color(20, 30, 10) : btnColor) : btnDisabledColor;
-            sf::Color pout = canPass ? (passHover ? NEON_GREEN : BORDER_NORMAL) : sf::Color(34, 34, 34);
-            drawBeveledRect(m_window, px2, py2, pw, ph, 5.f, pfill, pout, 2.f);
+            sf::Color pfill = canPass ? (passHover ? STREET_PINK : STREET_BLACK) : btnDisabledColor;
+            sf::Color pout = canPass ? OUTLINE_BLACK : sf::Color(34, 34, 34);
+            drawBeveledRect(m_window, px2, py2, pw, ph, 5.f, pfill, pout, 3.f);
 
             m_passBtnText->setString(L"跳过");
             m_passBtnText->setCharacterSize((unsigned)(fontSize * m_passBtnHoverScale));
-            m_passBtnText->setFillColor(canPass ? sf::Color::White : TEXT_DISABLED);
+            m_passBtnText->setFillColor(canPass ? STREET_WHITE : TEXT_DISABLED);
             auto psz = m_passBtnText->getGlobalBounds().size;
             m_passBtnText->setPosition({px + (btnW - psz.x) / 2.f, btnY + btnH * 0.22f});
             m_window.draw(*m_passBtnText);
@@ -1938,9 +2121,9 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             float ph = btnH * m_playBtnHoverScale;
             float px2 = px + (btnW - pw) / 2.f;
             float py2 = btnY + (btnH - ph) / 2.f;
-            sf::Color pfill = canPlaySelected ? (playHover ? NEON_GREEN : sf::Color(26, 42, 10)) : btnDisabledColor;
-            sf::Color pout = canPlaySelected ? (playHover ? sf::Color::White : NEON_GREEN) : sf::Color(68, 68, 0);
-            drawBeveledRect(m_window, px2, py2, pw, ph, 5.f, pfill, pout, 2.f);
+            sf::Color pfill = canPlaySelected ? (playHover ? STREET_YELLOW : STREET_CYAN) : btnDisabledColor;
+            sf::Color pout = canPlaySelected ? OUTLINE_BLACK : sf::Color(68, 68, 0);
+            drawBeveledRect(m_window, px2, py2, pw, ph, 5.f, pfill, pout, 3.f);
 
             if (playHover && canPlaySelected) {
                 drawHazardStripes(m_window, px2 + 4.f, py2 + 2.f, pw - 8.f, 3.f, 6.f);
@@ -1948,7 +2131,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
 
             m_playBtnText->setString(L"出牌");
             m_playBtnText->setCharacterSize((unsigned)(fontSize * m_playBtnHoverScale));
-            m_playBtnText->setFillColor(canPlaySelected ? (playHover ? sf::Color::Black : NEON_GREEN) : sf::Color(85, 85, 0));
+            m_playBtnText->setFillColor(canPlaySelected ? (playHover ? OUTLINE_BLACK : STREET_WHITE) : sf::Color(85, 85, 0));
             auto plsz = m_playBtnText->getGlobalBounds().size;
             m_playBtnText->setPosition({px + (btnW - plsz.x) / 2.f, btnY + btnH * 0.22f});
             m_window.draw(*m_playBtnText);
@@ -1979,7 +2162,7 @@ void Renderer::renderGame(const GameState& state,
         m_momentumAnimTimer = 0.f;
     }
 
-    drawBackground(winSize);
+    drawBackground(winSize, true);
 
     // --- 电脑手牌 (牌背) ---
     auto& ch = state.computerHand();
@@ -2000,7 +2183,7 @@ void Renderer::renderGame(const GameState& state,
     auto ccsz = cCount.getGlobalBounds().size;
     sf::RectangleShape cTag({ccsz.x + 12.f, ccsz.y + 6.f});
     cTag.setPosition({w * 0.012f + m_computerLabel->getGlobalBounds().size.x + 8.f, chY - h * 0.007f});
-    cTag.setFillColor(NEON_GREEN);
+    cTag.setFillColor(STREET_PINK);
     m_window.draw(cTag);
     cCount.setPosition({w * 0.012f + m_computerLabel->getGlobalBounds().size.x + 8.f + 6.f, chY - h * 0.007f + 2.f});
     m_window.draw(cCount);
@@ -2016,8 +2199,8 @@ void Renderer::renderGame(const GameState& state,
         sf::RectangleShape eBox({w * 0.56f, h * 0.14f});
         eBox.setPosition({(w - w * 0.56f) / 2.f, computerPlayedY(h) - h * 0.07f});
         eBox.setFillColor(sf::Color(10, 10, 10));
-        eBox.setOutlineColor(sf::Color(26, 26, 26));
-        eBox.setOutlineThickness(1.f);
+        eBox.setOutlineColor(STREET_PINK);
+        eBox.setOutlineThickness(3.f);
         m_window.draw(eBox);
     }
     drawPlayedCards(state.lastComputerPlay(), computerPlayedY(h), ps, winSize);
@@ -2161,7 +2344,7 @@ void Renderer::renderGame(const GameState& state,
             sprite.setRotation(sf::degrees(fanRot));
             m_window.draw(sprite);
 
-            // 癞子牌金色标记
+            // 癞子牌荧光粉标记
             if (state.playerBuffs().wildcardRank >= 0
                 && doudizhuOrder(ph[i].rank) == state.playerBuffs().wildcardRank) {
                 sf::Sprite wglow(it->second);
@@ -2169,26 +2352,26 @@ void Renderer::renderGame(const GameState& state,
                 wglow.setScale({hs * 1.03f, hs * 1.03f});
                 wglow.setPosition({bcx, bcy});
                 wglow.setRotation(sf::degrees(fanRot));
-                wglow.setColor(sf::Color(255, 190, 30, 80));
+                wglow.setColor(sf::Color(STREET_PINK.r, STREET_PINK.g, STREET_PINK.b, 80));
                 m_window.draw(wglow);
             }
 
             if (sel) {
-                // 荧光绿 overlay
+                // 橙黄 overlay
                 sf::Sprite hl(it->second);
                 hl.setOrigin({CARD_W / 2.0f, CARD_H});
                 hl.setScale({hs, hs});
                 hl.setPosition({bcx, bcy});
                 hl.setRotation(sf::degrees(fanRot));
-                hl.setColor(sf::Color(204, 255, 0, 60));
+                hl.setColor(sf::Color(STREET_YELLOW.r, STREET_YELLOW.g, STREET_YELLOW.b, 60));
                 m_window.draw(hl);
-                // 外发光边框（放大 1.02 倍绘制）
+                // 外发光边框（青蓝，放大 1.02 倍绘制）
                 sf::Sprite glow(it->second);
                 glow.setOrigin({CARD_W / 2.0f, CARD_H});
                 glow.setScale({hs * 1.02f, hs * 1.02f});
                 glow.setPosition({bcx, bcy});
                 glow.setRotation(sf::degrees(fanRot));
-                glow.setColor(sf::Color(204, 255, 0, 40));
+                glow.setColor(sf::Color(STREET_CYAN.r, STREET_CYAN.g, STREET_CYAN.b, 40));
                 m_window.draw(glow);
             }
         }
@@ -2204,7 +2387,7 @@ void Renderer::renderGame(const GameState& state,
     auto pcsz = pCount.getGlobalBounds().size;
     sf::RectangleShape pTag({pcsz.x + 12.f, pcsz.y + 6.f});
     pTag.setPosition({w * 0.012f + m_playerLabel->getGlobalBounds().size.x + 8.f, phY - h * 0.033f});
-    pTag.setFillColor(NEON_GREEN);
+    pTag.setFillColor(STREET_CYAN);
     m_window.draw(pTag);
     pCount.setPosition({w * 0.012f + m_playerLabel->getGlobalBounds().size.x + 8.f + 6.f, phY - h * 0.033f + 2.f});
     m_window.draw(pCount);
@@ -2229,7 +2412,7 @@ void Renderer::renderGame(const GameState& state,
         // 提示文字 (延迟0.3s后渐显)
         float hintAlpha = std::clamp((m_momentumAnimTimer - 0.3f) / 0.3f, 0.f, 1.f);
         sf::Text hint(m_font, L"选择1张手牌打出", (unsigned)(h * 0.032f));
-        hint.setFillColor(sf::Color(204, 255, 0, (uint8_t)(255 * hintAlpha)));
+        hint.setFillColor(sf::Color(STREET_YELLOW.r, STREET_YELLOW.g, STREET_YELLOW.b, (uint8_t)(255 * hintAlpha)));
         hint.setStyle(sf::Text::Bold);
         auto hsz = hint.getGlobalBounds().size;
         hint.setPosition({(w - hsz.x) / 2.f, cardY + cardH + h * 0.03f});
