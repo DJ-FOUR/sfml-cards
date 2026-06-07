@@ -11,7 +11,7 @@
 #include "run_state.hpp"
 #include "ai_memory.hpp"
 
-enum class Screen { MainMenu, CharacterSelect, WildcardSelect, Transition, Game, Reward, GameOver };
+enum class Screen { MainMenu, CharacterSelect, WildcardSelect, Transition, Game, Reward, GameOver, Settings };
 
 int main()
 {
@@ -44,6 +44,11 @@ int main()
     // ---- 过渡界面状态 ----
     int hoveredAcquiredIdx = -1;
     int hoveredSlotIdx = -1;
+
+    // ---- 设置弹窗状态 ----
+    Screen previousScreen = Screen::MainMenu;
+    bool   draggingMusicSlider = false;
+    bool   draggingSoundSlider = false;
 
     // ---- 拖拽状态 ----
     int  dragSourceType  = 0;    // 0=无, 1=卡池, 2=装备槽
@@ -123,8 +128,43 @@ int main()
                 }
             }
 
+            // --- 鼠标移动 (设置界面滑块拖拽) ---
+            if (const auto* mm = event->getIf<sf::Event::MouseMoved>()) {
+                sf::Vector2f mpos = window.mapPixelToCoords(mm->position);
+                if (screen == Screen::Settings) {
+                    if (draggingMusicSlider) {
+                        auto hit = renderer.hitTestSettings(mpos, winSize);
+                        if (hit.action == 3) renderer.setMusicVolume(hit.sliderVal);
+                    }
+                    if (draggingSoundSlider) {
+                        auto hit = renderer.hitTestSettings(mpos, winSize);
+                        if (hit.action == 4) renderer.setSoundVolume(hit.sliderVal);
+                    }
+                }
+            }
+
             if (const auto* btn = event->getIf<sf::Event::MouseButtonPressed>()) {
                 if (btn->button != sf::Mouse::Button::Left) continue;
+
+                // ========== 设置弹窗 ==========
+                if (screen == Screen::Settings) {
+                    sf::Vector2f pos = window.mapPixelToCoords(btn->position);
+                    auto hit = renderer.hitTestSettings(pos, winSize);
+                    if (hit.action == 1) {
+                        screen = previousScreen;
+                    } else if (hit.action == 2) {
+                        game = GameState{};
+                        aiMemory.clear();
+                        screen = Screen::MainMenu;
+                    } else if (hit.action == 3) {
+                        draggingMusicSlider = true;
+                        renderer.setMusicVolume(hit.sliderVal);
+                    } else if (hit.action == 4) {
+                        draggingSoundSlider = true;
+                        renderer.setSoundVolume(hit.sliderVal);
+                    }
+                    continue;
+                }
 
                 // ========== 主菜单 ==========
                 if (screen == Screen::MainMenu) {
@@ -295,6 +335,12 @@ int main()
                             screen = Screen::MainMenu;
                             continue;
                         }
+                        int setHit = renderer.hitTestSettingsButton(pos2, winSize);
+                        if (setHit == 1) {
+                            previousScreen = Screen::Game;
+                            screen = Screen::Settings;
+                            continue;
+                        }
                         int dbgHit = renderer.hitTestDebugButton(pos2, winSize);
                         if (dbgHit == 1) {
                             game.forceWin();
@@ -381,6 +427,14 @@ int main()
                     }
                 }
             }
+
+            // --- 鼠标释放 (停止滑块拖拽) ---
+            if (const auto* rel = event->getIf<sf::Event::MouseButtonReleased>()) {
+                if (rel->button == sf::Mouse::Button::Left) {
+                    draggingMusicSlider = false;
+                    draggingSoundSlider = false;
+                }
+            }
         } // end pollEvent
 
         // ========== 更新 ==========
@@ -412,6 +466,17 @@ int main()
                         // 失败 → 延迟后弹出失败界面
                         // 直接进入失败界面
                     }
+                }
+            }
+
+            // 敌人连击之势: 延迟后自动打出1张牌
+            if (game.phase() == GameState::Phase::MomentumPlay
+                && game.isMomentumEnemy() && !aiTriggered) {
+                if (aiClock.getElapsedTime().asSeconds() > 0.8f) {
+                    game.enemyMomentumPlay();
+                    // 重置时钟和触发标记，让后续ComputerTurn自然触发
+                    aiClock.restart();
+                    aiTriggered = false;
                 }
             }
 
@@ -482,6 +547,13 @@ int main()
         case Screen::GameOver:
             renderer.drawGameOver(winSize, mw,
                 run.currentLevel(), (int)run.acquiredSkills().size());
+            break;
+        case Screen::Settings:
+            // 绘制底层游戏画面 (冻结)
+            if (previousScreen == Screen::Game)
+                renderer.renderGame(game, selectedIndices, winSize,
+                                    canPlaySelected, run.equippedSkills(), mw, 0.f);
+            renderer.drawSettingsPopup(winSize, mw, draggingMusicSlider, draggingSoundSlider);
             break;
         }
         window.display();

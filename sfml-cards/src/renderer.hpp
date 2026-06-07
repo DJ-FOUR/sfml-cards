@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include "card.hpp"
 #include "game_state.hpp"
 #include "skill.hpp"
@@ -88,6 +89,19 @@ public:
     void startDealAnimation(int cardCount);
     bool isDealAnimating() const { return m_dealActive; }
 
+    // 音量控制
+    void setMusicVolume(float v);
+    void setSoundVolume(float v);
+    float musicVolume() const { return m_musicVolume; }
+    float soundVolume() const { return m_soundVolume; }
+
+    // 设置弹窗
+    void drawSettingsPopup(sf::Vector2u winSize, const sf::Vector2f& mousePos,
+                           bool draggingMusic, bool draggingSound);
+    struct SettingsHitResult { int action = 0; float sliderVal = 0.f; };
+    SettingsHitResult hitTestSettings(const sf::Vector2f& pos, sf::Vector2u winSize);
+    int hitTestSettingsButton(const sf::Vector2f& pos, sf::Vector2u winSize);
+
 private:
     sf::RenderWindow& m_window;
     sf::Font m_font;
@@ -96,8 +110,20 @@ private:
     sf::Texture m_backTexture;
     sf::Texture m_bgTexture;
     sf::Texture m_gameBgTexture;
+    sf::Music   m_bgMusic;
+    sf::SoundBuffer m_hoverSndBuf;
+    std::unique_ptr<sf::Sound> m_hoverSnd;
+    float m_musicVolume = 100.f;
+    float m_soundVolume = 100.f;
 
-    // 游戏UI
+    // 卡牌悬停音效 — 记录上一帧悬停目标，仅在 hover 进入时播放
+    int m_prevCharHoveredIdx  = -1;
+    int m_prevRewardHoveredIdx = -1;
+    int m_prevHandHoveredIdx  = -1;
+    int m_prevPoolHoveredIdx  = -1;
+    int m_prevSlotHoveredIdx  = -1;
+
+    void playHoverTick();
     std::unique_ptr<sf::Text> m_playerLabel;
     std::unique_ptr<sf::Text> m_computerLabel;
     std::unique_ptr<sf::Text> m_statusText;

@@ -337,6 +337,21 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
     }
     m_gameBgTexture.setSmooth(true);
 
+    // 背景音乐
+    if (!m_bgMusic.openFromFile("resources/music/first.mp3")) {
+        std::fprintf(stderr, "Failed to load music\n");
+        return false;
+    }
+    m_bgMusic.setLooping(true);
+    m_bgMusic.play();
+
+    // 卡牌悬停音效
+    if (!m_hoverSndBuf.loadFromFile("resources/sound/touch.mp3")) {
+        std::fprintf(stderr, "Failed to load hover sound\n");
+        return false;
+    }
+    m_hoverSnd = std::make_unique<sf::Sound>(m_hoverSndBuf);
+
     m_playerLabel   = std::make_unique<sf::Text>(m_font, L"玩家", 18);
     m_computerLabel = std::make_unique<sf::Text>(m_font, L"镜像AI", 18);
     m_statusText    = std::make_unique<sf::Text>(m_font, L"", 22);
@@ -417,6 +432,25 @@ void Renderer::updateAnimations(float dt)
             m_dealAnim.clear();
         }
     }
+}
+
+void Renderer::playHoverTick()
+{
+    if (!m_hoverSnd) return;
+    m_hoverSnd->stop();
+    m_hoverSnd->play();
+}
+
+void Renderer::setMusicVolume(float v)
+{
+    m_musicVolume = std::clamp(v, 0.f, 100.f);
+    m_bgMusic.setVolume(m_musicVolume);
+}
+
+void Renderer::setSoundVolume(float v)
+{
+    m_soundVolume = std::clamp(v, 0.f, 100.f);
+    if (m_hoverSnd) m_hoverSnd->setVolume(m_soundVolume);
 }
 
 void Renderer::setSkillSlotLifted(int slotIndex, bool lifted)
@@ -913,6 +947,7 @@ void Renderer::drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mou
     float startY = (h - actualCH) / 2.0f + h * 0.03f;
 
     // ---- 更新每张卡的目标悬停状态 ----
+    int charHovered = -1;
     for (int i = 0; i < CHAR_COUNT; ++i) {
         float cx = startX + i * (actualCW + gap);
         float curS = m_charHover[i].currentScale;
@@ -922,10 +957,14 @@ void Renderer::drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mou
         float curY = startY + (actualCH - curH) / 2.0f + m_charHover[i].currentYOffset;
         sf::FloatRect rect({curX, curY}, {curW, curH});
         bool hover = rect.contains(mousePos);
+        if (hover) charHovered = i;
 
         m_charHover[i].targetYOffset = hover ? -h * 0.065f : 0.0f;
         m_charHover[i].targetScale   = hover ? 1.10f : 1.0f;
     }
+    if (charHovered != m_prevCharHoveredIdx && charHovered >= 0)
+        playHoverTick();
+    m_prevCharHoveredIdx = charHovered;
 
     // ---- 绘制 3 张角色卡片 (与技能牌一致的上浮+缩放动效) ----
     for (int i = 0; i < CHAR_COUNT; ++i) {
@@ -1426,6 +1465,15 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
                            (iconBot + gInfoTop - nsz.y) / 2.f});
         m_window.draw(gName);
     }
+
+    // 卡牌悬停音效 — 卡池
+    if (hoveredAcquiredIdx != m_prevPoolHoveredIdx && hoveredAcquiredIdx >= 0)
+        playHoverTick();
+    m_prevPoolHoveredIdx = hoveredAcquiredIdx;
+    // 卡牌悬停音效 — 装备槽
+    if (hoveredSlotIdx != m_prevSlotHoveredIdx && hoveredSlotIdx >= 0)
+        playHoverTick();
+    m_prevSlotHoveredIdx = hoveredSlotIdx;
 }
 
 int Renderer::hitTransitionSlot(const sf::Vector2f& pos, sf::Vector2u winSize)
@@ -1474,6 +1522,7 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
     float w = (float)winSize.x;
     float h = (float)winSize.y;
     int hoveredSid = -1;
+    int rewardHoveredIdx = -1;
 
     for (int i = 0; i < 3; ++i) {
         auto baseRect = skillCardRect(i, 3, winSize);
@@ -1492,13 +1541,17 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
 
         sf::FloatRect displayRect({curX, curY}, {curW, curH});
         bool hover = displayRect.contains(mousePos);
-        if (hover && sid >= 0) hoveredSid = sid;
+        if (hover && sid >= 0) { hoveredSid = sid; rewardHoveredIdx = i; }
 
         m_skillHover[i].targetYOffset = hover ? -h * 0.065f : 0.0f;
         m_skillHover[i].targetScale   = hover ? 1.10f : 1.0f;
 
         drawSkillCard(curX, curY, curW, curH, sid, owned, hover, winSize);
     }
+
+    if (rewardHoveredIdx != m_prevRewardHoveredIdx && rewardHoveredIdx >= 0)
+        playHoverTick();
+    m_prevRewardHoveredIdx = rewardHoveredIdx;
 
     // 悬停技能描述面板
     if (hoveredSid >= 0) {
@@ -1850,8 +1903,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         statusCol = STREET_CYAN;
         break;
     case GameState::Phase::MomentumPlay:
-        statusStr = L"[STATUS] 连击之势";
-        statusCol = STREET_CYAN;
+        statusStr = state.isMomentumEnemy() ? L"[STATUS] 敌方连击之势" : L"[STATUS] 连击之势";
+        statusCol = state.isMomentumEnemy() ? STREET_PINK : STREET_CYAN;
         break;
     case GameState::Phase::ComputerTurn:
         statusStr = L"[STATUS] 敌方运算中";
@@ -1943,6 +1996,40 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         };
         drawDbgBtn(dbgX1, L"我赢");
         drawDbgBtn(dbgX2, L"我输");
+    }
+
+    // 设置按钮 (右上角) — 低调齿轮风格
+    {
+        float gbSz = h * 0.04f;               // 小正方形
+        float gbX = w - gbSz - w * 0.025f;
+        float gbY = h * 0.028f;
+        bool gHover = sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(mousePos);
+        drawBeveledRect(m_window, gbX, gbY, gbSz, gbSz, 3.f,
+                        btnColor, gHover ? STREET_CYAN : OUTLINE_BLACK, 2.f);
+        // 齿轮图标: 中心圆 + 外围短线
+        float gcX = gbX + gbSz / 2.f;
+        float gcY = gbY + gbSz / 2.f;
+        float gR = gbSz * 0.28f;
+        sf::CircleShape gearCenter(gR);
+        gearCenter.setOrigin({gR, gR});
+        gearCenter.setPosition({gcX, gcY});
+        gearCenter.setFillColor(sf::Color::Transparent);
+        gearCenter.setOutlineColor(gHover ? STREET_CYAN : TEXT_DIM);
+        gearCenter.setOutlineThickness(1.5f);
+        m_window.draw(gearCenter);
+        // 外围齿
+        for (int j = 0; j < 8; ++j) {
+            float ang = j * 3.14159265f * 2.f / 8.f;
+            float ir = gR + 2.f;
+            float or2 = gR + 5.f;
+            sf::RectangleShape tooth({or2 - ir, 2.f});
+            tooth.setOrigin({tooth.getSize().x / 2.f, 1.f});
+            tooth.setPosition({gcX + std::cos(ang) * (ir + or2) / 2.f,
+                               gcY + std::sin(ang) * (ir + or2) / 2.f});
+            tooth.setRotation(sf::degrees(ang * 180.f / 3.14159265f + 90.f));
+            tooth.setFillColor(gHover ? STREET_CYAN : TEXT_DIM);
+            m_window.draw(tooth);
+        }
     }
 
     // 技能槽 (卡牌比例 CARD_W:CARD_H, 左下角) — 整体面板
@@ -2043,7 +2130,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     float eskH = h * 0.065f;
     float eskW = eskH * CARD_W / CARD_H;
     float eskGap = w * 0.012f;
-    float eskX = w * 0.30f;
+    float totalEskW = MAX_SKILL_SLOTS * eskW + (MAX_SKILL_SLOTS - 1) * eskGap;
+    float eskX = w - totalEskW - w * 0.03f;
     float eskY = h * 0.02f;
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
@@ -2081,7 +2169,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
 
     // 出牌/不出按钮 (手牌上方居中, 含悬停缩放动效) — 新风格
     bool isMomentum = (state.phase() == GameState::Phase::MomentumPlay);
-    if (state.phase() == GameState::Phase::PlayerTurn || isMomentum) {
+    bool isEnemyMomentum = isMomentum && state.isMomentumEnemy();
+    if ((state.phase() == GameState::Phase::PlayerTurn || isMomentum) && !isEnemyMomentum) {
         float btnW = w * 0.12f;
         float btnH = h * 0.055f;
         float btnGap = w * 0.03f;
@@ -2233,6 +2322,8 @@ void Renderer::renderGame(const GameState& state,
     m_handCardTargets.resize(pn, 0.0f);
     m_handCardYOffsets.resize(pn, 0.0f);
 
+    int hoveredIdx = -1;
+
     if (m_dealActive) {
         // --- 发牌动画模式: 底部中心旋转 + 扇形展开 + 飞入 ---
         float middle = (pn - 1) / 2.0f;
@@ -2271,12 +2362,12 @@ void Renderer::renderGame(const GameState& state,
         }
     } else {
         // --- 扇形排布 ---
+        hoveredIdx = -1;
         float middle = (pn - 1) / 2.0f;
         float maxAngleDeg = 0.0f;
         float arcCurve = 0.0f;
 
         // ---- 第一步：根据遮挡顺序（从上层到下层）找出唯一悬停的卡牌 ----
-        int hoveredIdx = -1;
         for (int i = pn - 1; i >= 0; --i) {
             auto pos = handCardPos(i, pn, phY, winSize);
             bool sel = std::find(selectedIndices.begin(), selectedIndices.end(), i)
@@ -2376,6 +2467,10 @@ void Renderer::renderGame(const GameState& state,
             }
         }
     }
+    if (hoveredIdx != m_prevHandHoveredIdx && hoveredIdx >= 0)
+        playHoverTick();
+    m_prevHandHoveredIdx = hoveredIdx;
+
     m_playerLabel->setString(L"我方单位");
     m_playerLabel->setPosition({w * 0.012f, phY - h * 0.033f});
     m_playerLabel->setFillColor(sf::Color::White);
@@ -2411,13 +2506,222 @@ void Renderer::renderGame(const GameState& state,
 
         // 提示文字 (延迟0.3s后渐显)
         float hintAlpha = std::clamp((m_momentumAnimTimer - 0.3f) / 0.3f, 0.f, 1.f);
-        sf::Text hint(m_font, L"选择1张手牌打出", (unsigned)(h * 0.032f));
-        hint.setFillColor(sf::Color(STREET_YELLOW.r, STREET_YELLOW.g, STREET_YELLOW.b, (uint8_t)(255 * hintAlpha)));
+        const sf::String hintStr = state.isMomentumEnemy()
+            ? L"敌方触发连击之势"
+            : L"选择1张手牌打出";
+        sf::Text hint(m_font, hintStr, (unsigned)(h * 0.032f));
+        sf::Color hintCol = state.isMomentumEnemy()
+            ? sf::Color(STREET_PINK.r, STREET_PINK.g, STREET_PINK.b, (uint8_t)(255 * hintAlpha))
+            : sf::Color(STREET_YELLOW.r, STREET_YELLOW.g, STREET_YELLOW.b, (uint8_t)(255 * hintAlpha));
+        hint.setFillColor(hintCol);
         hint.setStyle(sf::Text::Bold);
         auto hsz = hint.getGlobalBounds().size;
         hint.setPosition({(w - hsz.x) / 2.f, cardY + cardH + h * 0.03f});
         m_window.draw(hint);
     }
+}
+
+// ====== 设置弹窗 ======
+
+void Renderer::drawSettingsPopup(sf::Vector2u winSize, const sf::Vector2f& mousePos,
+                                  bool draggingMusic, bool draggingSound)
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+
+    // 半透明暗色遮罩
+    sf::RectangleShape overlay({w, h});
+    overlay.setFillColor(sf::Color(0, 0, 0, 180));
+    m_window.draw(overlay);
+
+    // 面板尺寸
+    float panelW = w * 0.55f;
+    float panelH = h * 0.52f;
+    float panelX = (w - panelW) / 2.f;
+    float panelY = (h - panelH) / 2.f;
+
+    drawBeveledRect(m_window, panelX, panelY, panelW, panelH, 12.f,
+                    STREET_BLACK, STREET_PINK, 3.f);
+
+    // 标题
+    sf::Text title(m_font, L"设置", (unsigned)(h * 0.045f));
+    title.setFillColor(STREET_WHITE);
+    title.setStyle(sf::Text::Bold);
+    auto tsz = title.getGlobalBounds().size;
+    title.setPosition({panelX + (panelW - tsz.x) / 2.f, panelY + h * 0.025f});
+    // 标题阴影
+    sf::Text titleSh(m_font, L"设置", (unsigned)(h * 0.045f));
+    titleSh.setFillColor(OUTLINE_BLACK);
+    titleSh.setStyle(sf::Text::Bold);
+    titleSh.setPosition({title.getPosition().x + 3.f, title.getPosition().y + 3.f});
+    m_window.draw(titleSh);
+    m_window.draw(title);
+
+    // 关闭按钮 X (面板右上角)
+    float closeSz = h * 0.035f;
+    float closeX = panelX + panelW - closeSz - 16.f;
+    float closeY = panelY + 10.f;
+    bool closeHover = sf::FloatRect({closeX, closeY}, {closeSz, closeSz}).contains(mousePos);
+    sf::Color closeCol = closeHover ? STREET_PINK : TEXT_DIM;
+    // X 形线条
+    sf::RectangleShape xLine1({closeSz * 0.7f, 3.f});
+    xLine1.setOrigin({xLine1.getSize().x / 2.f, 1.5f});
+    xLine1.setPosition({closeX + closeSz / 2.f, closeY + closeSz / 2.f});
+    xLine1.setRotation(sf::degrees(45.f));
+    xLine1.setFillColor(closeCol);
+    m_window.draw(xLine1);
+    sf::RectangleShape xLine2({closeSz * 0.7f, 3.f});
+    xLine2.setOrigin({xLine2.getSize().x / 2.f, 1.5f});
+    xLine2.setPosition({closeX + closeSz / 2.f, closeY + closeSz / 2.f});
+    xLine2.setRotation(sf::degrees(-45.f));
+    xLine2.setFillColor(closeCol);
+    m_window.draw(xLine2);
+
+    // --- 滑块参数 ---
+    float sliderY1 = panelY + h * 0.15f;
+    float sliderY2 = panelY + h * 0.26f;
+    float sliderW = panelW * 0.65f;
+    float sliderH = h * 0.012f;
+    float sliderX = panelX + panelW * 0.18f;
+    float knobR = h * 0.016f;
+
+    // 辅助: 绘制滑块
+    auto drawSlider = [&](float sy, float value, sf::Color fillCol, bool isDragging) {
+        // 轨道背景
+        drawBeveledRect(m_window, sliderX, sy, sliderW, sliderH, 2.f,
+                        sf::Color(40, 40, 40), OUTLINE_BLACK, 1.5f);
+        // 已填充部分
+        float fillW = sliderW * (value / 100.f);
+        if (fillW > 0.f) {
+            sf::RectangleShape fillBar({fillW, sliderH});
+            fillBar.setPosition({sliderX, sy});
+            fillBar.setFillColor(fillCol);
+            m_window.draw(fillBar);
+        }
+        // 滑块圆钮
+        float knobX = sliderX + fillW;
+        float knobY = sy + sliderH / 2.f;
+        sf::CircleShape knob(knobR);
+        knob.setOrigin({knobR, knobR});
+        knob.setPosition({knobX, knobY});
+        knob.setFillColor(isDragging ? STREET_YELLOW : STREET_WHITE);
+        knob.setOutlineColor(OUTLINE_BLACK);
+        knob.setOutlineThickness(2.f);
+        m_window.draw(knob);
+        // 百分比文字
+        sf::Text pct(m_font, std::to_wstring((int)value) + L"%",
+                     (unsigned)(h * 0.022f));
+        pct.setFillColor(TEXT_DIM);
+        auto psz = pct.getGlobalBounds().size;
+        pct.setPosition({sliderX + sliderW + 16.f, sy - psz.y / 2.f + sliderH / 2.f});
+        m_window.draw(pct);
+    };
+
+    // 标签
+    sf::Text musicLabel(m_font, L"音乐", (unsigned)(h * 0.026f));
+    musicLabel.setFillColor(TEXT_DIM);
+    musicLabel.setStyle(sf::Text::Bold);
+    auto mlsz = musicLabel.getGlobalBounds().size;
+    musicLabel.setPosition({sliderX - mlsz.x - 16.f,
+                            sliderY1 + sliderH / 2.f - mlsz.y / 2.f});
+    m_window.draw(musicLabel);
+
+    sf::Text soundLabel(m_font, L"音效", (unsigned)(h * 0.026f));
+    soundLabel.setFillColor(TEXT_DIM);
+    soundLabel.setStyle(sf::Text::Bold);
+    auto slsz = soundLabel.getGlobalBounds().size;
+    soundLabel.setPosition({sliderX - slsz.x - 16.f,
+                            sliderY2 + sliderH / 2.f - slsz.y / 2.f});
+    m_window.draw(soundLabel);
+
+    drawSlider(sliderY1, m_musicVolume, STREET_CYAN, draggingMusic);
+    drawSlider(sliderY2, m_soundVolume, STREET_PINK, draggingSound);
+
+    // --- 底部按钮 ---
+    float btnW = panelW * 0.32f;
+    float btnH = h * 0.06f;
+    float btnY = panelY + panelH - btnH - h * 0.06f;
+    float btnGap = panelW * 0.06f;
+    float totalBtnW = btnW * 2 + btnGap;
+    float btnStartX = panelX + (panelW - totalBtnW) / 2.f;
+
+    // 返回主界面按钮
+    sf::FloatRect menuBtn({btnStartX, btnY}, {btnW, btnH});
+    drawMenuButton(menuBtn, L"返回主界面", true, menuBtn.contains(mousePos), winSize);
+
+    // 关闭按钮
+    sf::FloatRect closeBtn({btnStartX + btnW + btnGap, btnY}, {btnW, btnH});
+    drawMenuButton(closeBtn, L"关闭", true, closeBtn.contains(mousePos), winSize);
+}
+
+Renderer::SettingsHitResult Renderer::hitTestSettings(const sf::Vector2f& pos,
+                                                       sf::Vector2u winSize)
+{
+    SettingsHitResult result;
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+
+    float panelW = w * 0.55f;
+    float panelH = h * 0.52f;
+    float panelX = (w - panelW) / 2.f;
+    float panelY = (h - panelH) / 2.f;
+
+    // 关闭按钮 X
+    float closeSz = h * 0.035f;
+    float closeX = panelX + panelW - closeSz - 16.f;
+    float closeY = panelY + 10.f;
+    if (sf::FloatRect({closeX, closeY}, {closeSz, closeSz}).contains(pos)) {
+        result.action = 1; // 关闭
+        return result;
+    }
+
+    // 音乐滑块
+    float sliderW = panelW * 0.65f;
+    float sliderH = h * 0.012f;
+    float sliderX = panelX + panelW * 0.18f;
+    float sliderY1 = panelY + h * 0.15f;
+    float knobR = h * 0.016f;
+    // 扩大滑块点击区域
+    float hitPad = knobR * 2.f;
+    if (sf::FloatRect({sliderX - hitPad, sliderY1 - hitPad},
+                       {sliderW + hitPad * 2, sliderH + hitPad * 2}).contains(pos)) {
+        result.action = 3; // 音乐滑块
+        result.sliderVal = std::clamp((pos.x - sliderX) / sliderW, 0.f, 1.f) * 100.f;
+        return result;
+    }
+
+    // 音效滑块
+    float sliderY2 = panelY + h * 0.26f;
+    if (sf::FloatRect({sliderX - hitPad, sliderY2 - hitPad},
+                       {sliderW + hitPad * 2, sliderH + hitPad * 2}).contains(pos)) {
+        result.action = 4; // 音效滑块
+        result.sliderVal = std::clamp((pos.x - sliderX) / sliderW, 0.f, 1.f) * 100.f;
+        return result;
+    }
+
+    // 返回主界面按钮
+    float btnW = panelW * 0.32f;
+    float btnH = h * 0.06f;
+    float btnY2 = panelY + panelH - btnH - h * 0.06f;
+    float btnGap = panelW * 0.06f;
+    float totalBtnW = btnW * 2 + btnGap;
+    float btnStartX = panelX + (panelW - totalBtnW) / 2.f;
+    if (sf::FloatRect({btnStartX, btnY2}, {btnW, btnH}).contains(pos)) {
+        result.action = 2; // 返回主界面
+        return result;
+    }
+
+    // 关闭按钮
+    if (sf::FloatRect({btnStartX + btnW + btnGap, btnY2}, {btnW, btnH}).contains(pos)) {
+        result.action = 1; // 关闭
+        return result;
+    }
+
+    // 点击面板外 = 关闭
+    if (!sf::FloatRect({panelX, panelY}, {panelW, panelH}).contains(pos))
+        result.action = 1;
+
+    return result;
 }
 
 // ====== 游戏: 点击检测 ======
@@ -2512,6 +2816,18 @@ int Renderer::hitTestGameButton(const sf::Vector2f& worldPos,
         sf::FloatRect passBounds({startX, btnY}, {btnW, btnH});
         if (passBounds.contains(worldPos)) return 2;
     }
+    return 0;
+}
+
+int Renderer::hitTestSettingsButton(const sf::Vector2f& worldPos,
+                                     sf::Vector2u winSize)
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    float gbSz = h * 0.04f;
+    float gbX = w - gbSz - w * 0.025f;
+    float gbY = h * 0.028f;
+    if (sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(worldPos)) return 1;
     return 0;
 }
 

@@ -21,7 +21,7 @@ target_link_options(main PRIVATE -static)
 add_compile_definitions(SFML_STATIC)
 target_link_libraries(main PRIVATE
     sfml-graphics-s sfml-window-s sfml-system-s sfml-audio-s sfml-network-s
-    flac freetype ogg vorbis vorbisenc vorbisfile
+    vorbisfile vorbisenc vorbis ogg flac freetype
     opengl32 winmm gdi32 ws2_32
 )
 

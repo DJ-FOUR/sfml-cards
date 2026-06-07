@@ -64,6 +64,9 @@ public:
 
     // 连击之势: 选1张牌打出
     bool momentumPlay(int handIndex);
+    // 连击之势 (敌人触发): AI自动选1张牌打出
+    bool enemyMomentumPlay();
+    bool isMomentumEnemy() const { return m_momentumIsEnemy; }
 
     bool canPlay(const std::vector<int>& handIndices) const;
 
@@ -133,6 +136,9 @@ private:
     // Skill 0: 连击之势 (TRIGGER)
     bool m_momentumActive = false;
     int  m_enemyPassStreak = 0;   // 敌人连续不出牌计数
+    bool m_enemyMomentumActive = false; // 敌人装备了连击之势
+    int  m_playerPassStreak = 0;  // 玩家连续不出牌计数
+    bool m_momentumIsEnemy = false; // 当前MomentumPlay是否为敌人触发
 
     // 角色被动: 炸弹收藏家
     bool m_isBombCollector = false;

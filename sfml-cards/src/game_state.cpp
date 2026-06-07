@@ -511,6 +511,9 @@ void GameState::dealCards(int extraCards)
     m_playerSkillSlots = {-1, -1, -1};
     m_momentumActive = false;
     m_enemyPassStreak = 0;
+    m_enemyMomentumActive = false;
+    m_playerPassStreak = 0;
+    m_momentumIsEnemy = false;
 }
 
 void GameState::setEnemySkills(const std::array<int, MAX_SKILL_SLOTS>& skills)
@@ -519,6 +522,7 @@ void GameState::setEnemySkills(const std::array<int, MAX_SKILL_SLOTS>& skills)
     m_enemyBuffs.clear();
     // 自动应用敌人被动技能效果
     for (int sid : m_enemySkills) {
+        if (sid == 0) m_enemyMomentumActive = true;
         if (sid == 1) m_enemyBuffs.straightExtended = true;
         if (sid == 2) m_enemyBuffs.jokerWill = true;
     }
@@ -531,6 +535,8 @@ void GameState::setPlayerSkillSlots(const std::array<int, MAX_SKILL_SLOTS>& slot
     m_playerBuffs.jokerWill = false;
     m_momentumActive = false;
     m_enemyPassStreak = 0;
+    m_playerPassStreak = 0;
+    m_momentumIsEnemy = false;
     // 自动应用所有被动技能效果
     for (int sid : m_playerSkillSlots) {
         if (sid == 0) m_momentumActive = true;
@@ -620,6 +626,9 @@ bool GameState::playerPlay(const std::vector<int>& handIndices)
 
     applyPostPlayEffects();
 
+    // 玩家出牌则重置敌人连击之势的pass计数
+    m_playerPassStreak = 0;
+
     if (m_playerHand.empty()) {
         m_phase = Phase::PlayerWins;
         return true;
@@ -658,6 +667,21 @@ void GameState::playerPass()
         act.cardCount = 0;
 
         m_aiMemory->recordPlay(feat, act);
+    }
+
+    // 敌人连击之势: 玩家不出牌时累计
+    if (m_enemyMomentumActive) {
+        m_playerPassStreak++;
+        if (m_playerPassStreak >= 2) {
+            m_playerPassStreak = 0;
+            m_enemyMomentumActive = false;
+            m_momentumIsEnemy = true;
+            startNewRound();
+            m_computerDisplayed.clear();
+            m_playerDisplayed.clear();
+            m_phase = Phase::MomentumPlay;
+            return;
+        }
     }
 
     endPlayerTurnCleanup();
@@ -708,6 +732,41 @@ bool GameState::momentumPlay(int handIndex)
     // 连击之势牌打出后清空桌面，继续玩家回合
     startNewRound();
     m_phase = Phase::PlayerTurn;
+    return true;
+}
+
+bool GameState::enemyMomentumPlay()
+{
+    if (m_phase != Phase::MomentumPlay || !m_momentumIsEnemy) return false;
+    if (m_computerHand.empty()) return false;
+
+    // AI: 选择单牌中斗地主排序最大的牌打出
+    int bestIdx = 0;
+    int bestRank = -1;
+    for (int i = 0; i < (int)m_computerHand.size(); ++i) {
+        int dzRank = doudizhuOrder(m_computerHand[i].rank);
+        if (dzRank > bestRank) {
+            bestRank = dzRank;
+            bestIdx = i;
+        }
+    }
+
+    Card chosen = m_computerHand[bestIdx];
+    m_computerHand.erase(m_computerHand.begin() + bestIdx);
+    sortByDZ(m_computerHand);
+
+    HandPattern pattern{HandType::Single, bestRank, 0, 0};
+    PlayedCards play{pattern, {chosen}};
+
+    m_computerDisplayed = {chosen};
+    m_playerDisplayed.clear();
+    m_lastPlay = play;
+    m_lastPlayer = 1;
+    m_momentumIsEnemy = false;
+
+    // 连击之势牌打出后清空桌面，回到敌人回合
+    startNewRound();
+    m_phase = Phase::ComputerTurn;
     return true;
 }
 
