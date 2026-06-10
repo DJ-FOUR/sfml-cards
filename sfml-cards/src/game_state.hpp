@@ -116,6 +116,8 @@ public:
     // 技能状态查询 (渲染用)
     bool hasPassiveSkill(int skillId) const;
     int  playerBombMarks() const { return m_bombMarks; }
+    int  bombGenFlash() const { return m_bombGenFlash; }
+    void tickBombFlash() { if (m_bombGenFlash > 0) m_bombGenFlash--; }
     uint8_t skillGlowMask(const std::vector<int>& selectedIndices) const;
 
     // AI 学习记忆 (由 main.cpp 管理生命周期)
@@ -152,6 +154,7 @@ private:
     // 角色被动: 炸弹收藏家
     bool m_isBombCollector = false;
     int  m_bombMarks = 0;
+    int  m_bombGenFlash = 0;  // 炸弹生成闪光帧计数
 
     // 角色被动: 掌控者「调度」
     bool m_isScheduler       = false;

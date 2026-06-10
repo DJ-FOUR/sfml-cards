@@ -30,7 +30,8 @@ public:
                     bool canPlaySelected,
                     const std::array<int, MAX_SKILL_SLOTS>& playerSkillIds,
                     const sf::Vector2f& mousePos,
-                    float dt);
+                    float dt,
+                    int charId);
     int hitTestCard(const sf::Vector2f& worldPos,
                     int cardCount, sf::Vector2u winSize,
                     const std::vector<int>& selectedIndices) const;
@@ -111,10 +112,12 @@ private:
     sf::Texture m_backTexture;
     sf::Texture m_bgTexture;
     sf::Texture m_gameBgTexture;
+    sf::Texture m_charTextures[CHAR_COUNT];        // 角色选择立绘 (char0/1/2.png)
+    sf::Texture m_battleCharTextures[CHAR_COUNT]; // 对战立绘 (char_0/1/_2.png)
     sf::Music   m_bgMusic;
     sf::SoundBuffer m_hoverSndBuf;
     std::unique_ptr<sf::Sound> m_hoverSnd;
-    float m_musicVolume = 100.f;
+    float m_musicVolume = 40.f;
     float m_soundVolume = 100.f;
 
     // 卡牌悬停音效 — 记录上一帧悬停目标，仅在 hover 进入时播放
@@ -169,8 +172,8 @@ private:
     sf::FloatRect skillCardRect(int idx, int total, sf::Vector2u winSize) const;
 
     // ---------- 角色卡片悬停交互 ----------
-    static constexpr unsigned CHAR_RT_W = 280;
-    static constexpr unsigned CHAR_RT_H = 480;
+    static constexpr unsigned CHAR_RT_W = 500;
+    static constexpr unsigned CHAR_RT_H = 857;  // 与 char0/1/2.png 分辨率一致，避免模糊
     sf::RenderTexture m_charRT[CHAR_COUNT];
 
     struct HoverAnimState {
@@ -204,6 +207,8 @@ private:
     float m_shakeTimer = 0.f;
     float m_momentumAnimTimer = 0.f;   // 连击之势触发动画计时
     float m_scheduleAnimTimer = 0.f;   // 调度触发动画计时
+    float m_scheduleFlyProgress = -1.f; // 调度立绘飞行动画: <0=不活跃, 0→1=飞行中
+    bool  m_wasSchedulePlay = false;    // 上一帧是否在调度阶段
 
     static constexpr float DEAL_STAGGER   = 0.08f;
     static constexpr float DEAL_DURATION  = 0.60f;

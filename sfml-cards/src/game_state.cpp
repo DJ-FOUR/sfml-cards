@@ -935,6 +935,7 @@ void GameState::recordBombPlayed()
         m_playerHand.insert(m_playerHand.end(), bombCards.begin(), bombCards.end());
         sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
         m_bombMarks = 0;
+        m_bombGenFlash = 120;  // 触发红色斜条纹闪光 (2秒@60fps)
     }
 }
 

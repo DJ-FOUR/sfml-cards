@@ -193,14 +193,20 @@ int main()
                             screen = rewardSkills.empty() ? Screen::Transition : Screen::Reward;
                         }
                     } else if (hit == 9) {
-                        game = GameState{};
-                        screen = Screen::MainMenu;
+                        previousScreen = Screen::CharacterSelect;
+                        screen = Screen::Settings;
                     }
                 }
 
                 // ========== 癞子选择 ==========
                 else if (screen == Screen::WildcardSelect) {
                     sf::Vector2f pos = window.mapPixelToCoords(btn->position);
+                    int setHit = renderer.hitTestSettingsButton(pos, winSize);
+                    if (setHit == 1) {
+                        previousScreen = Screen::WildcardSelect;
+                        screen = Screen::Settings;
+                        continue;
+                    }
                     int hit = renderer.hitWildcardSelect(pos, winSize);
                     if (hit >= 0 && hit <= 12) {
                         run.setWildcardRank(hit);
@@ -242,9 +248,8 @@ int main()
                         resetAndDealGame();
                         screen = Screen::Game;
                     } else if (fightHit == 9) {
-                        aiMemory.clear();
-                        game = GameState{};
-                        screen = Screen::MainMenu;
+                        previousScreen = Screen::Transition;
+                        screen = Screen::Settings;
                     }
                 }
 
@@ -263,12 +268,21 @@ int main()
                             run.advanceToNextLevel();
                         }
                         screen = Screen::Transition;
+                    } else if (hit == 9) {
+                        previousScreen = Screen::Reward;
+                        screen = Screen::Settings;
                     }
                 }
 
                 // ========== 失败界面 ==========
                 else if (screen == Screen::GameOver) {
                     sf::Vector2f pos = window.mapPixelToCoords(btn->position);
+                    int setHit = renderer.hitTestSettingsButton(pos, winSize);
+                    if (setHit == 1) {
+                        previousScreen = Screen::GameOver;
+                        screen = Screen::Settings;
+                        continue;
+                    }
                     int hit = renderer.hitGameOver(pos, winSize);
                     if (hit == 1) {
                         game = GameState{};  // 重置全部状态（含炸弹印记）
@@ -544,6 +558,7 @@ int main()
         // ---------- 更新角色卡片悬停动画 ----------
         float dt = animClock.restart().asSeconds();
         renderer.updateAnimations(dt);
+        game.tickBombFlash();
 
         // ---------- 过渡界面悬停检测 ----------
         if (screen == Screen::Transition) {
@@ -579,7 +594,8 @@ int main()
             break;
         case Screen::Game:
             renderer.renderGame(game, selectedIndices, winSize,
-                              canPlaySelected, run.equippedSkills(), mw, dt);
+                              canPlaySelected, run.equippedSkills(), mw, dt,
+                              run.currentCharId());
             break;
         case Screen::Reward:
             renderer.drawReward(winSize, mw, rewardSkills, run.acquiredSkills());
@@ -592,7 +608,8 @@ int main()
             // 绘制底层游戏画面 (冻结)
             if (previousScreen == Screen::Game)
                 renderer.renderGame(game, selectedIndices, winSize,
-                                    canPlaySelected, run.equippedSkills(), mw, 0.f);
+                                    canPlaySelected, run.equippedSkills(), mw, 0.f,
+                                    run.currentCharId());
             renderer.drawSettingsPopup(winSize, mw, draggingMusicSlider, draggingSoundSlider);
             break;
         }

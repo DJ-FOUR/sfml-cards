@@ -318,8 +318,7 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
         m_faceTextures[i] = std::move(tex);
     }
 
-    std::snprintf(buf, sizeof(buf), "%s/card.png", imageDir.c_str());
-    if (!m_backTexture.loadFromFile(buf)) {
+    if (!m_backTexture.loadFromFile("images/character-card/card00.png")) {
         std::fprintf(stderr, "Failed to load card back\n");
         return false;
     }
@@ -344,6 +343,26 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
     }
     m_bgMusic.setLooping(true);
     m_bgMusic.play();
+
+    // 角色选择立绘 (char0/1/2.png)
+    for (int i = 0; i < CHAR_COUNT; ++i) {
+        std::snprintf(buf, sizeof(buf), "images/character-card/char%d.png", i);
+        if (!m_charTextures[i].loadFromFile(buf)) {
+            std::fprintf(stderr, "Failed to load character texture: %s\n", buf);
+            return false;
+        }
+        m_charTextures[i].setSmooth(true);
+    }
+
+    // 对战立绘 (char_0/1/_2.png)
+    for (int i = 0; i < CHAR_COUNT; ++i) {
+        std::snprintf(buf, sizeof(buf), "images/character-card/char_%d.png", i);
+        if (!m_battleCharTextures[i].loadFromFile(buf)) {
+            std::fprintf(stderr, "Failed to load battle character texture: %s\n", buf);
+            return false;
+        }
+        m_battleCharTextures[i].setSmooth(true);
+    }
 
     // 卡牌悬停音效
     if (!m_hoverSndBuf.loadFromFile("resources/sound/touch.mp3")) {
@@ -483,6 +502,7 @@ void Renderer::startDealAnimation(int cardCount)
 }
 
 // 将单张角色卡片的内容绘制到预分配的 RenderTexture
+// 设计：全幅角色图片 + 底部白色区域写角色名
 void Renderer::renderCharCardToRT(int charIdx, bool hover)
 {
     auto& rt = m_charRT[charIdx];
@@ -490,143 +510,27 @@ void Renderer::renderCharCardToRT(int charIdx, bool hover)
 
     rt.clear(sf::Color::Transparent);
 
-    float cw = (float)CHAR_RT_W;
-    float ch = (float)CHAR_RT_H;
+    float cw = (float)CHAR_RT_W;   // 210
+    float ch = (float)CHAR_RT_H;   // 360
 
-    sf::Color charColor = charStreetColor(charIdx);
-    float cut = 12.f;
-    // ---- 背景底框（切角矩形） ----
-    sf::ConvexShape bg(8);
-    bg.setPoint(0, {cut, 0}); bg.setPoint(1, {cw - cut, 0});
-    bg.setPoint(2, {cw, cut}); bg.setPoint(3, {cw, ch - cut});
-    bg.setPoint(4, {cw - cut, ch}); bg.setPoint(5, {cut, ch});
-    bg.setPoint(6, {0, ch - cut}); bg.setPoint(7, {0, cut});
-    bg.setFillColor(hover ? sf::Color(charColor.r/4, charColor.g/4, charColor.b/4) : sf::Color(13, 13, 13));
-    bg.setOutlineColor(hover ? charColor : OUTLINE_BLACK);
-    bg.setOutlineThickness(hover ? 4.f : 3.f);
-    rt.draw(bg);
-
-    // ---- 顶部角标 OP-0N（角色专属色） ----
-    sf::RectangleShape tag({60.f, 22.f});
-    tag.setFillColor(charColor);
-    rt.draw(tag);
-    sf::Text tagText(m_font, L"OP-0" + std::to_wstring(charIdx + 1), 14);
-    tagText.setFillColor(OUTLINE_BLACK);
-    tagText.setStyle(sf::Text::Bold);
-    auto tsz = tagText.getGlobalBounds().size;
-    tagText.setPosition({(60.f - tsz.x) / 2.f, (22.f - tsz.y) / 2.f - 2.f});
-    rt.draw(tagText);
-
-    // ---- 头像占位 [IMG-CHAR-AVATAR] ----
-    float iconSize = cw * 0.45f;
-    float iconX = (cw - iconSize) / 2.0f;
-    float iconY = ch * 0.10f;
-    sf::RectangleShape iconBg({iconSize, iconSize});
-    iconBg.setPosition({iconX, iconY});
-    iconBg.setFillColor(sf::Color(26, 26, 26));
-    iconBg.setOutlineColor(OUTLINE_BLACK);
-    iconBg.setOutlineThickness(3.f);
-    rt.draw(iconBg);
-    // 内部波点纹理装饰
-    float dotSize = 3.f;
-    float spacing = dotSize * 2.5f;
-    for (float dy = iconY + spacing; dy < iconY + iconSize - spacing; dy += spacing) {
-        for (float dx = iconX + spacing; dx < iconX + iconSize - spacing; dx += spacing) {
-            sf::CircleShape dot(dotSize);
-            dot.setPosition({dx, dy});
-            dot.setFillColor(sf::Color(charColor.r/3, charColor.g/3, charColor.b/3));
-            rt.draw(dot);
-        }
+    // ====== 1. 全幅角色图片 ======
+    {
+        sf::Sprite charSprite(m_charTextures[charIdx]);
+        auto texSz = m_charTextures[charIdx].getSize();
+        float s = cw / (float)texSz.x;
+        charSprite.setScale({s, s});
+        rt.draw(charSprite);
     }
 
-    sf::Text avText(m_font, std::to_string(charIdx + 1),
-                    (unsigned)(iconSize * 0.45f));
-    avText.setFillColor(charColor);
-    auto asz = avText.getGlobalBounds().size;
-    avText.setPosition({iconX + (iconSize - asz.x) / 2.0f,
-                        iconY + (iconSize - asz.y) / 2.0f});
-    rt.draw(avText);
-
-    // ---- 角色名称（粗黑描底） ----
-    float nameF = ch * 0.065f;
-    sf::Text nameShadow(m_font, c.name, (unsigned)nameF);
-    nameShadow.setFillColor(OUTLINE_BLACK);
-    nameShadow.setStyle(sf::Text::Bold);
-    auto nsz = nameShadow.getGlobalBounds().size;
-    nameShadow.setPosition({(cw - nsz.x) / 2.0f + 3.f, ch * 0.50f + 3.f});
-    rt.draw(nameShadow);
-
-    sf::Text name(m_font, c.name, (unsigned)nameF);
-    name.setFillColor(STREET_WHITE);
-    name.setStyle(sf::Text::Bold);
-    name.setPosition({(cw - nsz.x) / 2.0f, ch * 0.50f});
-    rt.draw(name);
-
-    // ---- 被动技名 ----
-    float passF = ch * 0.05f;
-    sf::Text passName(m_font, c.passiveName, (unsigned)passF);
-    passName.setFillColor(STREET_YELLOW);
-    auto pnsz = passName.getGlobalBounds().size;
-    passName.setPosition({(cw - pnsz.x) / 2.0f, ch * 0.60f});
-    rt.draw(passName);
-
-    // ---- 卡片四角小星星装饰 ----
-    if (hover) {
-        float starR = 8.f;
-        auto drawStarLocal = [&](float sx, float sy) {
-            sf::ConvexShape star(10);
-            for (int i = 0; i < 10; ++i) {
-                float angle = (i * 36.f - 90.f) * 3.14159265f / 180.f;
-                float rad = (i % 2 == 0) ? starR : starR * 0.4f;
-                star.setPoint(i, {sx + std::cos(angle) * rad, sy + std::sin(angle) * rad});
-            }
-            star.setFillColor(charColor);
-            star.setOutlineColor(OUTLINE_BLACK);
-            star.setOutlineThickness(2.f);
-            rt.draw(star);
-        };
-        drawStarLocal(cut + starR, cut + starR);
-        drawStarLocal(cw - cut - starR, cut + starR);
-        drawStarLocal(cut + starR, ch - cut - starR);
-        drawStarLocal(cw - cut - starR, ch - cut - starR);
-    }
-
-    // ---- 被动技描述 (超宽文本自动双行居中) ----
-    float descF = ch * 0.035f;
-    float margin = 28.f;
-    std::wstring descText = c.passiveDesc;
-
-    sf::Text measure(m_font, descText, (unsigned)descF);
-    if (measure.getGlobalBounds().size.x > cw - margin * 2.f) {
-        // 优先在标点处断开
-        size_t split = std::wstring::npos;
-        for (auto brk : {L'，', L',', L' '})
-            if ((split = descText.find(brk)) != std::wstring::npos && split > 0)
-                break;
-        if (split == std::wstring::npos)
-            split = descText.size() / 2;
-
-        std::wstring l1 = descText.substr(0, split + 1);
-        std::wstring l2 = descText.substr(split + 1);
-
-        sf::Text line1(m_font, l1, (unsigned)descF);
-        line1.setFillColor(sf::Color(200, 200, 200));
-        auto sz1 = line1.getGlobalBounds().size;
-        line1.setPosition({(cw - sz1.x) / 2.f, ch * 0.70f});
-        rt.draw(line1);
-
-        sf::Text line2(m_font, l2, (unsigned)descF);
-        line2.setFillColor(sf::Color(200, 200, 200));
-        auto sz2 = line2.getGlobalBounds().size;
-        line2.setPosition({(cw - sz2.x) / 2.f, ch * 0.76f});
-        rt.draw(line2);
-    } else {
-        sf::Text passDesc(m_font, descText, (unsigned)descF);
-        passDesc.setFillColor(sf::Color(200, 200, 200));
-        auto pdsz = passDesc.getGlobalBounds().size;
-        passDesc.setPosition({(cw - pdsz.x) / 2.0f, ch * 0.73f});
-        rt.draw(passDesc);
-    }
+    // ====== 2. 角色名称（图片底部白色区域） ======
+    float nameY = ch * 0.87f;
+    float nameF = ch * 0.07f;
+    sf::Text nameText(m_font, c.name, (unsigned)nameF);
+    nameText.setFillColor(sf::Color::Black);
+    nameText.setStyle(sf::Text::Bold);
+    auto nsz = nameText.getGlobalBounds().size;
+    nameText.setPosition({(cw - nsz.x) / 2.f, nameY});
+    rt.draw(nameText);
 
     rt.display();
 }
@@ -653,17 +557,6 @@ void Renderer::drawBackground(sf::Vector2u winSize, bool useGameBg)
         m_window.clear(sf::Color(10, 10, 10));
     }
 
-    // 非游戏背景时叠加涂鸦装饰层
-    if (!useGameBg) {
-        // 角落小星星
-        drawStar(m_window, w * 0.05f, h * 0.92f, 10.f, STREET_PINK, 2.f);
-        drawStar(m_window, w * 0.95f, h * 0.08f, 12.f, STREET_CYAN, 2.f);
-        drawStar(m_window, w * 0.15f, h * 0.15f, 8.f, STREET_YELLOW, 2.f);
-        drawStar(m_window, w * 0.85f, h * 0.85f, 9.f, STREET_PINK, 2.f);
-        // 底部锯齿装饰
-        drawZigzagBorder(m_window, w * 0.2f, h * 0.96f, w * 0.6f, STREET_CYAN, 3.f, 6.f);
-    }
-
     // 版本号
     sf::Text ver(m_font, L"v1.0.0_OS", 14);
     ver.setFillColor(sf::Color(160, 160, 160));
@@ -678,12 +571,38 @@ void Renderer::drawBackButton(sf::Vector2u winSize, const sf::Vector2f& mousePos
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
-    float bx = w * 0.03f;
-    float by = h * 0.03f;
-    float bbw = w * 0.08f;
-    float bbh = h * 0.045f;
-    sf::FloatRect backRect({bx, by}, {bbw, bbh});
-    drawMenuButton(backRect, L"返回", true, backRect.contains(mousePos), winSize);
+    float gbSz = h * 0.04f;
+    float gbX = w * 0.03f;
+    float gbY = h * 0.03f;
+    bool gHover = sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(mousePos);
+
+    sf::Color btnColor(10, 10, 10);
+    drawBeveledRect(m_window, gbX, gbY, gbSz, gbSz, 3.f,
+                    btnColor, gHover ? STREET_CYAN : OUTLINE_BLACK, 2.f);
+
+    // 齿轮图标: 中心圆 + 外围齿
+    float gcX = gbX + gbSz / 2.f;
+    float gcY = gbY + gbSz / 2.f;
+    float gR = gbSz * 0.28f;
+    sf::CircleShape gearCenter(gR);
+    gearCenter.setOrigin({gR, gR});
+    gearCenter.setPosition({gcX, gcY});
+    gearCenter.setFillColor(sf::Color::Transparent);
+    gearCenter.setOutlineColor(gHover ? STREET_CYAN : TEXT_DIM);
+    gearCenter.setOutlineThickness(1.5f);
+    m_window.draw(gearCenter);
+    for (int j = 0; j < 8; ++j) {
+        float ang = j * 3.14159265f * 2.f / 8.f;
+        float ir = gR + 2.f;
+        float or2 = gR + 5.f;
+        sf::RectangleShape tooth({or2 - ir, 2.f});
+        tooth.setOrigin({tooth.getSize().x / 2.f, 1.f});
+        tooth.setPosition({gcX + std::cos(ang) * (ir + or2) / 2.f,
+                           gcY + std::sin(ang) * (ir + or2) / 2.f});
+        tooth.setRotation(sf::degrees(ang * 180.f / 3.14159265f + 90.f));
+        tooth.setFillColor(gHover ? STREET_CYAN : TEXT_DIM);
+        m_window.draw(tooth);
+    }
 }
 
 // ====== 通用: 菜单按钮 ======
@@ -933,18 +852,17 @@ void Renderer::drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mou
 {
     drawBackground(winSize);
     drawBackButton(winSize, mousePos);
-    drawTitle(L"选择单位", 0.06f, winSize);
 
     float w = (float)winSize.x;
     float h = (float)winSize.y;
 
-    // 实际显示尺寸（基于窗口比例）
-    float actualCW = w * 0.20f;
-    float actualCH = actualCW * 12.0f / 7.0f;
-    float gap = w * 0.05f;
+    // 实际显示尺寸（比例匹配 char0/1/2.png，三卡铺满屏幕）
+    float actualCW = w * 0.22f;
+    float actualCH = actualCW * (float)CHAR_RT_H / (float)CHAR_RT_W;
+    float gap = w * 0.04f;
     float totalW = CHAR_COUNT * actualCW + (CHAR_COUNT - 1) * gap;
     float startX = (w - totalW) / 2.0f;
-    float startY = (h - actualCH) / 2.0f + h * 0.03f;
+    float startY = (h - actualCH) / 2.0f - h * 0.04f;
 
     // ---- 更新每张卡的目标悬停状态 ----
     int charHovered = -1;
@@ -983,6 +901,35 @@ void Renderer::drawCharacterSelect(sf::Vector2u winSize, const sf::Vector2f& mou
         cardSprite.setScale({curW / CHAR_RT_W, curH / CHAR_RT_H});
         m_window.draw(cardSprite);
     }
+
+    // ---- 悬停角色说明面板 (白底粗黑边，仅显示被动描述) ----
+    if (charHovered >= 0) {
+        auto& c = getAllCharacters()[charHovered];
+
+        float panelW = w * 0.65f;
+        float panelH = h * 0.14f;
+        float panelX = (w - panelW) / 2.f;
+        float panelY = h * 0.78f;
+        float cut = 8.f;
+
+        drawBeveledRect(m_window, panelX, panelY, panelW, panelH, cut,
+                        sf::Color::White, OUTLINE_BLACK, 8.f);
+
+        // 顶部色带（角色专属色）
+        sf::Color charColor = charStreetColor(charHovered);
+        sf::RectangleShape topBar({panelW - cut * 2, 5.f});
+        topBar.setPosition({panelX + cut, panelY + 2.f});
+        topBar.setFillColor(charColor);
+        m_window.draw(topBar);
+
+        // 被动技描述（左侧）
+        sf::Text descText(m_font, c.passiveDesc, (unsigned)(panelH * 0.24f));
+        descText.setFillColor(sf::Color(60, 60, 60));
+        auto dsz = descText.getGlobalBounds().size;
+        descText.setPosition({panelX + panelW * 0.05f,
+                              panelY + (panelH - dsz.y) / 2.f});
+        m_window.draw(descText);
+    }
 }
 
 int Renderer::hitCharacterSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
@@ -990,12 +937,12 @@ int Renderer::hitCharacterSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
     float w = (float)winSize.x;
     float h = (float)winSize.y;
 
-    float cw = w * 0.20f;
-    float ch = cw * 12.0f / 7.0f;
-    float gap = w * 0.05f;
+    float cw = w * 0.22f;
+    float ch = cw * (float)CHAR_RT_H / (float)CHAR_RT_W;
+    float gap = w * 0.04f;
     float totalW = CHAR_COUNT * cw + (CHAR_COUNT - 1) * gap;
     float startX = (w - totalW) / 2.f;
-    float startY = (h - ch) / 2.f + h * 0.03f;
+    float startY = (h - ch) / 2.f - h * 0.04f;
 
     for (int i = 0; i < CHAR_COUNT; ++i) {
         float cx = startX + i * (cw + gap);
@@ -1008,9 +955,9 @@ int Renderer::hitCharacterSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
             return i + 1;
     }
 
-    float bx = w * 0.03f, by = h * 0.03f;
-    float bbw = w * 0.08f, bbh = h * 0.045f;
-    if (sf::FloatRect({bx, by}, {bbw, bbh}).contains(pos)) return 9;
+    float gbSz = h * 0.04f;
+    float gbX = w * 0.03f, gbY = h * 0.03f;
+    if (sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(pos)) return 9;
     return 0;
 }
 
@@ -1025,6 +972,7 @@ const wchar_t* WILDCARD_RANK_NAMES[13] = {
 void Renderer::drawWildcardSelect(sf::Vector2u winSize, const sf::Vector2f& mousePos)
 {
     drawBackground(winSize);
+    drawBackButton(winSize, mousePos);
     drawTitle(L"选择癞子点数", 0.06f, winSize);
 
     float w = (float)winSize.x;
@@ -1504,9 +1452,9 @@ int Renderer::hitTransitionFight(const sf::Vector2f& pos, sf::Vector2u winSize)
     float btnY = h * 0.83f;
     if (sf::FloatRect({btnX, btnY}, {btnW, btnH}).contains(pos)) return 1;
 
-    float bx = w * 0.03f, by = h * 0.03f;
-    float bbw = w * 0.08f, bbh = h * 0.045f;
-    if (sf::FloatRect({bx, by}, {bbw, bbh}).contains(pos)) return 9;
+    float gbSz = h * 0.04f;
+    float gbX = w * 0.03f, gbY = h * 0.03f;
+    if (sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(pos)) return 9;
     return 0;
 }
 
@@ -1621,6 +1569,7 @@ void Renderer::drawGameOver(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                               int levelReached, int skillCount)
 {
     drawBackground(winSize);
+    drawBackButton(winSize, mousePos);
 
     float w = (float)winSize.x;
     float h = (float)winSize.y;
@@ -1742,6 +1691,15 @@ void Renderer::drawCardBack(float x, float y, float scale)
     sprite.setPosition({x, y});
     sprite.setScale({scale, scale});
     m_window.draw(sprite);
+
+    // 细黑色描边
+    float dispW = CARD_W * scale;
+    float dispH = CARD_H * scale;
+    float b = 1.5f;
+    sf::RectangleShape top({dispW, b});       top.setPosition({x, y});              top.setFillColor(OUTLINE_BLACK); m_window.draw(top);
+    sf::RectangleShape bot({dispW, b});       bot.setPosition({x, y + dispH - b});  bot.setFillColor(OUTLINE_BLACK); m_window.draw(bot);
+    sf::RectangleShape lft({b, dispH});       lft.setPosition({x, y});              lft.setFillColor(OUTLINE_BLACK); m_window.draw(lft);
+    sf::RectangleShape rgt({b, dispH});       rgt.setPosition({x + dispW - b, y});  rgt.setFillColor(OUTLINE_BLACK); m_window.draw(rgt);
 }
 
 void Renderer::drawPlayedCards(const std::vector<Card>& cards, float yCenter,
@@ -1950,12 +1908,39 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     m_statusText->setPosition({stX, stY});
     m_window.draw(*m_statusText);
 
-    // 炸弹收藏家印记显示（荧光粉星星图标）
-    float bmW = w * 0.07f;
+    // 炸弹收藏家印记显示（荧光粉星星图标 + 黑底背景 + 红色斜条纹）
     float bmH = h * 0.019f;
     float bmX = w * 0.78f;
     float bmY = h * 0.965f;
     int marks = state.playerBombMarks();
+    int flash = state.bombGenFlash();
+
+    // 背景框
+    float bgPad = 6.f;
+    float bgW = 3 * (bmH + 8.f) + 90.f;  // 三星 + 文字宽度
+    float bgH = bmH + bgPad * 2;
+    float bgX = bmX - bgPad;
+    float bgY = bmY - bgPad;
+    sf::RectangleShape bgBox({bgW, bgH});
+    bgBox.setPosition({bgX, bgY});
+    bgBox.setFillColor(sf::Color(10, 10, 10, 200));
+    bgBox.setOutlineColor(OUTLINE_BLACK);
+    bgBox.setOutlineThickness(1.f);
+    m_window.draw(bgBox);
+
+    // 红色斜条纹（炸弹生成闪光）
+    if (flash > 0) {
+        float alpha = std::min(1.f, flash / 30.f) * 200.f;
+        for (float sx = bgX - bgH; sx < bgX + bgW; sx += 8.f) {
+            sf::RectangleShape stripe({2.f, bgH * 1.5f});
+            stripe.setPosition({sx, bgY - bgH * 0.25f});
+            stripe.setRotation(sf::degrees(45.f));
+            stripe.setFillColor(sf::Color(220, 30, 30, (uint8_t)alpha));
+            m_window.draw(stripe);
+        }
+    }
+
+    // 星星
     for (int m = 0; m < 3; ++m) {
         float bx = bmX + m * (bmH + 8.f);
         float starR = bmH * 0.6f;
@@ -1965,29 +1950,13 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             drawStar(m_window, bx + starR, bmY + starR, starR, sf::Color(60, 60, 60), 1.f);
         }
     }
+
+    // 印记文字
     sf::Text bmLabel(m_font, L"印记 " + std::to_wstring(marks) + L"/3",
                      (unsigned)(bmH * 0.9f));
     bmLabel.setFillColor(marks > 0 ? STREET_PINK : TEXT_DIM);
     bmLabel.setPosition({bmX + 3 * (bmH + 8.f) + 6.f, bmY - 2.f});
     m_window.draw(bmLabel);
-
-    // 返回按钮（切角风格）
-    {
-        float rx = w * 0.03f;
-        float ry = h * 0.03f;
-        float rw = w * 0.09f;
-        float rh = h * 0.045f;
-        bool rHover = sf::FloatRect({rx, ry}, {rw, rh}).contains(mousePos);
-        drawBeveledRect(m_window, rx, ry, rw, rh, 4.f,
-                        btnColor, rHover ? STREET_CYAN : OUTLINE_BLACK, 3.f);
-
-        m_returnBtnText->setString(L"返回");
-        m_returnBtnText->setCharacterSize((unsigned)(rh * 0.38f));
-        m_returnBtnText->setFillColor(sf::Color::White);
-        auto rsz = m_returnBtnText->getGlobalBounds().size;
-        m_returnBtnText->setPosition({rx + (rw - rsz.x) / 2.f, ry + rh * 0.12f});
-        m_window.draw(*m_returnBtnText);
-    }
 
     // 开发者调试按钮 (DEV-ONLY) — 暗红低调风格
     if (state.phase() == GameState::Phase::PlayerTurn
@@ -2014,39 +1983,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         drawDbgBtn(dbgX2, L"我输");
     }
 
-    // 设置按钮 (右上角) — 低调齿轮风格
-    {
-        float gbSz = h * 0.04f;               // 小正方形
-        float gbX = w - gbSz - w * 0.025f;
-        float gbY = h * 0.028f;
-        bool gHover = sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(mousePos);
-        drawBeveledRect(m_window, gbX, gbY, gbSz, gbSz, 3.f,
-                        btnColor, gHover ? STREET_CYAN : OUTLINE_BLACK, 2.f);
-        // 齿轮图标: 中心圆 + 外围短线
-        float gcX = gbX + gbSz / 2.f;
-        float gcY = gbY + gbSz / 2.f;
-        float gR = gbSz * 0.28f;
-        sf::CircleShape gearCenter(gR);
-        gearCenter.setOrigin({gR, gR});
-        gearCenter.setPosition({gcX, gcY});
-        gearCenter.setFillColor(sf::Color::Transparent);
-        gearCenter.setOutlineColor(gHover ? STREET_CYAN : TEXT_DIM);
-        gearCenter.setOutlineThickness(1.5f);
-        m_window.draw(gearCenter);
-        // 外围齿
-        for (int j = 0; j < 8; ++j) {
-            float ang = j * 3.14159265f * 2.f / 8.f;
-            float ir = gR + 2.f;
-            float or2 = gR + 5.f;
-            sf::RectangleShape tooth({or2 - ir, 2.f});
-            tooth.setOrigin({tooth.getSize().x / 2.f, 1.f});
-            tooth.setPosition({gcX + std::cos(ang) * (ir + or2) / 2.f,
-                               gcY + std::sin(ang) * (ir + or2) / 2.f});
-            tooth.setRotation(sf::degrees(ang * 180.f / 3.14159265f + 90.f));
-            tooth.setFillColor(gHover ? STREET_CYAN : TEXT_DIM);
-            m_window.draw(tooth);
-        }
-    }
+    // 设置按钮
+    drawBackButton(winSize, mousePos);
 
     // 技能槽 (卡牌比例 CARD_W:CARD_H, 左下角) — 整体面板
     auto& allSkills = getAllSkills();
@@ -2265,10 +2203,6 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             sf::Color pout = canPlaySelected ? OUTLINE_BLACK : sf::Color(68, 68, 0);
             drawBeveledRect(m_window, px2, py2, pw, ph, 5.f, pfill, pout, 3.f);
 
-            if (playHover && canPlaySelected) {
-                drawHazardStripes(m_window, px2 + 4.f, py2 + 2.f, pw - 8.f, 3.f, 6.f);
-            }
-
             m_playBtnText->setString(L"出牌");
             m_playBtnText->setCharacterSize((unsigned)(fontSize * m_playBtnHoverScale));
             m_playBtnText->setFillColor(canPlaySelected ? (playHover ? OUTLINE_BLACK : STREET_WHITE) : sf::Color(85, 85, 0));
@@ -2287,7 +2221,8 @@ void Renderer::renderGame(const GameState& state,
                           bool canPlaySelected,
                           const std::array<int, MAX_SKILL_SLOTS>& playerSkillIds,
                           const sf::Vector2f& mousePos,
-                          float dt)
+                          float dt,
+                          int charId)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
@@ -2301,11 +2236,24 @@ void Renderer::renderGame(const GameState& state,
     } else {
         m_momentumAnimTimer = 0.f;
     }
-    // 调度动画计时
+    // 调度动画计时 + 飞行过渡检测
     if (state.phase() == GameState::Phase::SchedulePlay) {
         m_scheduleAnimTimer += dt;
+        m_wasSchedulePlay = true;
     } else {
         m_scheduleAnimTimer = 0.f;
+        // 刚退出调度 → 启动飞行动画 (仅掌控者 charId==2)
+        if (m_wasSchedulePlay && charId == 2) {
+            m_scheduleFlyProgress = 0.f;
+        }
+        m_wasSchedulePlay = false;
+    }
+    // 飞行动画推进
+    if (m_scheduleFlyProgress >= 0.f) {
+        m_scheduleFlyProgress += dt * 2.5f;  // ~0.4s 完成
+        if (m_scheduleFlyProgress >= 1.f) {
+            m_scheduleFlyProgress = -1.f;     // 动画结束
+        }
     }
 
     drawBackground(winSize, true);
@@ -2582,49 +2530,113 @@ void Renderer::renderGame(const GameState& state,
         m_window.draw(hint);
     }
 
-    // --- 掌控者「调度」: 中央提示卡 (手牌之上，入场缩放动画) ---
-    if (state.phase() == GameState::Phase::SchedulePlay) {
-        // 入场缩放动画: 0→0.4s 从 0.3x 放大到 1.0x
-        float scaleT = std::clamp(m_scheduleAnimTimer / 0.4f, 0.f, 1.f);
-        float ease = 1.f - (1.f - scaleT) * (1.f - scaleT);
-        float curS = 1.0f - 0.7f * (1.f - ease);
+    // --- 掌控者「调度」+ 飞行动画 (charId==2) ---
+    if (charId == 2) {
+        auto& tex = m_battleCharTextures[2];
+        auto texSz = tex.getSize();
 
-        float baseW = w * 0.10f;
-        float baseH = baseW * CARD_H / CARD_W;
-        float cardW = baseW * curS;
-        float cardH = baseH * curS;
-        float cardX = (w - cardW) / 2.f;
-        float cardY = h * 0.06f + (baseH - cardH) / 2.f;
+        // 目标: 右下角
+        float dstImgH = h * 0.25f;
+        float dstImgW = dstImgH * (float)texSz.x / (float)texSz.y;
+        float dstBoxW = h * 0.15f;
+        float dstBoxH = h * 0.24f;
+        float dstBoxX = w - dstBoxW - w * 0.02f;
+        float dstBoxY = h - dstBoxH - h * 0.02f;
 
-        // 卡片底框
-        drawBeveledRect(m_window, cardX, cardY, cardW, cardH, 8.f,
-                        STREET_BLACK, STREET_CYAN, 3.f);
-        // 顶部色带
-        sf::RectangleShape bar({cardW - 16.f, 4.f});
-        bar.setPosition({cardX + 8.f, cardY + 2.f});
-        bar.setFillColor(STREET_CYAN);
-        m_window.draw(bar);
-        // 八角图标
-        float iconSize = cardW * 0.35f;
-        float iconX = cardX + (cardW - iconSize) / 2.f;
-        float iconY = cardY + cardH * 0.10f;
-        drawOctagonIcon(m_window, iconX, iconY, iconSize, STREET_BLACK, STREET_CYAN, 2.f);
-        sf::Text iconText(m_font, L"S", (unsigned)(iconSize * 0.40f));
-        iconText.setFillColor(STREET_CYAN);
-        auto isz = iconText.getGlobalBounds().size;
-        iconText.setPosition({cardX + (cardW - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
-        m_window.draw(iconText);
+        // 起始: 上方中央
+        float srcImgH = h * 0.22f;
+        float srcImgW = srcImgH * (float)texSz.x / (float)texSz.y;
+        float srcImgX = (w - srcImgW) / 2.f;
+        float srcImgY = h * 0.06f;
 
-        // 提示文字 (0.15s后渐显)
-        float hintAlpha = std::clamp((m_scheduleAnimTimer - 0.15f) / 0.25f, 0.f, 1.f);
-        sf::Text hint(m_font, L"掌控者 · 调度 — 选择至多 3 张手牌弃掉换牌",
-                      (unsigned)(h * 0.022f));
-        hint.setFillColor(sf::Color(STREET_CYAN.r, STREET_CYAN.g, STREET_CYAN.b,
-                                    (uint8_t)(255 * hintAlpha)));
-        hint.setStyle(sf::Text::Bold);
-        auto hsz = hint.getGlobalBounds().size;
-        hint.setPosition({(w - hsz.x) / 2.f, cardY + cardH + h * 0.015f});
-        m_window.draw(hint);
+        float imgX, imgY, imgH, imgW, boxW, boxH, boxX, boxY;
+        bool drawBox = true;
+
+        if (state.phase() == GameState::Phase::SchedulePlay) {
+            // 阶段1: 上方中央 + 入场缩放
+            float scaleT = std::clamp(m_scheduleAnimTimer / 0.4f, 0.f, 1.f);
+            float ease = 1.f - (1.f - scaleT) * (1.f - scaleT);
+            float curS = 1.0f - 0.7f * (1.f - ease);
+            imgH = srcImgH * curS;
+            imgW = srcImgW * curS;
+            imgX = (w - imgW) / 2.f;
+            imgY = srcImgY;
+            boxW = imgW + 6.f;
+            boxH = imgH + 6.f;
+            boxX = imgX - 3.f;
+            boxY = imgY - 3.f;
+        } else if (m_scheduleFlyProgress >= 0.f) {
+            // 阶段2: 飞行动画 (上方 → 右下角)
+            float t = m_scheduleFlyProgress;
+            float ease = t * t * (3.f - 2.f * t);  // smoothstep
+            // 图像尺寸也渐变为目标
+            imgH = srcImgH + (dstImgH - srcImgH) * ease;
+            imgW = srcImgW + (dstImgW - srcImgW) * ease;
+            imgX = srcImgX + (dstBoxX + (dstBoxW - dstImgW) / 2.f - srcImgX) * ease;
+            imgY = srcImgY + (dstBoxY + (dstBoxH - dstImgH) / 2.f - srcImgY) * ease;
+            boxW = imgW + 6.f + (dstBoxW - (imgW + 6.f)) * ease;
+            boxH = imgH + 6.f + (dstBoxH - (imgH + 6.f)) * ease;
+            boxX = imgX - 3.f + (dstBoxX - (imgX - 3.f)) * ease;
+            boxY = imgY - 3.f + (dstBoxY - (imgY - 3.f)) * ease;
+        } else {
+            // 阶段3: 右下角固定
+            imgH = dstImgH;
+            imgW = dstImgW;
+            imgX = dstBoxX + (dstBoxW - dstImgW) / 2.f;
+            imgY = dstBoxY + (dstBoxH - dstImgH) / 2.f;
+            boxW = dstBoxW;
+            boxH = dstBoxH;
+            boxX = dstBoxX;
+            boxY = dstBoxY;
+        }
+
+        // 白底 + 蓝色描边
+        sf::RectangleShape bgBox({boxW, boxH});
+        bgBox.setPosition({boxX, boxY});
+        bgBox.setFillColor(sf::Color::White);
+        bgBox.setOutlineColor(STREET_CYAN);
+        bgBox.setOutlineThickness(3.f);
+        m_window.draw(bgBox);
+
+        // 立绘
+        sf::Sprite charSprite(tex);
+        charSprite.setScale({imgW / (float)texSz.x, imgH / (float)texSz.y});
+        charSprite.setPosition({imgX, imgY});
+        m_window.draw(charSprite);
+
+        // 调度提示文字
+        if (state.phase() == GameState::Phase::SchedulePlay) {
+            float hintAlpha = std::clamp((m_scheduleAnimTimer - 0.15f) / 0.25f, 0.f, 1.f);
+            sf::Text hint(m_font, L"掌控者 · 调度 — 选择至多 3 张手牌弃掉换牌",
+                          (unsigned)(h * 0.022f));
+            hint.setFillColor(sf::Color(STREET_CYAN.r, STREET_CYAN.g, STREET_CYAN.b,
+                                        (uint8_t)(255 * hintAlpha)));
+            hint.setStyle(sf::Text::Bold);
+            auto hsz = hint.getGlobalBounds().size;
+            hint.setPosition({(w - hsz.x) / 2.f, imgY + imgH + h * 0.015f});
+            m_window.draw(hint);
+        }
+    } else if (charId >= 0 && charId < CHAR_COUNT) {
+        // 其他角色: 右下角立绘
+        auto& tex = m_battleCharTextures[charId];
+        auto texSz = tex.getSize();
+        float imgH = h * 0.25f;
+        float imgW = imgH * (float)texSz.x / (float)texSz.y;
+        float boxW = h * 0.15f;
+        float boxH = h * 0.24f;
+        float boxX = w - boxW - w * 0.02f;
+        float boxY = h - boxH - h * 0.02f;
+        sf::RectangleShape bgBox({boxW, boxH});
+        bgBox.setPosition({boxX, boxY});
+        bgBox.setFillColor(sf::Color::White);
+        bgBox.setOutlineColor(STREET_CYAN);
+        bgBox.setOutlineThickness(3.f);
+        m_window.draw(bgBox);
+        sf::Sprite charSprite(tex);
+        charSprite.setScale({imgW / (float)texSz.x, imgH / (float)texSz.y});
+        charSprite.setPosition({boxX + (boxW - imgW) / 2.f,
+                                boxY + (boxH - imgH) / 2.f});
+        m_window.draw(charSprite);
     }
 }
 
@@ -2754,7 +2766,7 @@ void Renderer::drawSettingsPopup(sf::Vector2u winSize, const sf::Vector2f& mouse
 
     // 返回主界面按钮
     sf::FloatRect menuBtn({btnStartX, btnY}, {btnW, btnH});
-    drawMenuButton(menuBtn, L"返回主界面", true, menuBtn.contains(mousePos), winSize);
+    drawMenuButton(menuBtn, L"放弃本轮", true, menuBtn.contains(mousePos), winSize);
 
     // 关闭按钮
     sf::FloatRect closeBtn({btnStartX + btnW + btnGap, btnY}, {btnW, btnH});
@@ -2902,13 +2914,6 @@ int Renderer::hitTestGameButton(const sf::Vector2f& worldPos,
     float w = (float)winSize.x;
     float h = (float)winSize.y;
 
-    // 返回按钮
-    float rx = w * 0.03f;
-    float ry = h * 0.03f;
-    float rw = w * 0.08f;
-    float rh = h * 0.045f;
-    if (sf::FloatRect({rx, ry}, {rw, rh}).contains(worldPos)) return 3;
-
     // 出牌/不出按钮 (手牌上方居中)
     float btnW = w * 0.10f;
     float btnH = h * 0.05f;
@@ -2932,8 +2937,8 @@ int Renderer::hitTestSettingsButton(const sf::Vector2f& worldPos,
     float w = (float)winSize.x;
     float h = (float)winSize.y;
     float gbSz = h * 0.04f;
-    float gbX = w - gbSz - w * 0.025f;
-    float gbY = h * 0.028f;
+    float gbX = w * 0.03f;
+    float gbY = h * 0.03f;
     if (sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(worldPos)) return 1;
     return 0;
 }
