@@ -446,8 +446,8 @@ void GameState::dealCards(int extraCards)
     sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
     sortByDZ(m_computerHand);
 
-    // 确保玩家手牌中必有炸弹
-    {
+    // 炸弹收藏家：确保手牌中必有炸弹
+    if (m_isBombCollector) {
         std::array<int, DZ_RANKS> pfreq{};
         for (auto& c : m_playerHand)
             pfreq[doudizhuOrder(c.rank)]++;
@@ -498,11 +498,64 @@ void GameState::dealCards(int extraCards)
         }
     }
 
+    // 确保谋略家手牌中至少有2张癞子
+    if (m_playerBuffs.wildcardRank >= 0) {
+        int wr = m_playerBuffs.wildcardRank;
+        int wildCount = 0;
+        for (auto& c : m_playerHand)
+            if (doudizhuOrder(c.rank) == wr) wildCount++;
+        int needed = 2 - wildCount;
+        if (needed > 0) {
+            // 统计手牌各rank频次，优先替换散牌（freq==1且非炸弹rank）
+            std::array<int, DZ_RANKS> freq{};
+            for (auto& c : m_playerHand) freq[doudizhuOrder(c.rank)]++;
+            std::vector<int> swapIdx;
+            for (int pass = 0; pass < 2 && (int)swapIdx.size() < needed; ++pass) {
+                for (int i = 0; i < (int)m_playerHand.size() && (int)swapIdx.size() < needed; ++i) {
+                    int r = doudizhuOrder(m_playerHand[i].rank);
+                    if (r == wr) continue;
+                    if (freq[r] >= 4) continue;
+                    if (pass == 0 && freq[r] != 1) continue;
+                    if (std::find(swapIdx.begin(), swapIdx.end(), i) != swapIdx.end()) continue;
+                    swapIdx.push_back(i);
+                }
+            }
+            // 从抽牌堆找癞子牌
+            std::vector<Card> wildCards;
+            auto it = m_drawPile.begin();
+            while (it != m_drawPile.end() && (int)wildCards.size() < needed) {
+                if (doudizhuOrder(it->rank) == wr) {
+                    wildCards.push_back(*it);
+                    it = m_drawPile.erase(it);
+                } else { ++it; }
+            }
+            // 抽牌堆不够则合成
+            while ((int)wildCards.size() < needed) {
+                Card c;
+                c.rank = (wr == R2) ? Rank::Two : static_cast<Rank>(wr + 3);
+                c.suit = Suit::Spade;
+                c.imageIndex = wr * 4 + ((int)wildCards.size() % 4);
+                wildCards.push_back(c);
+            }
+            // 替换散牌为癞子
+            std::sort(swapIdx.begin(), swapIdx.end(), std::greater<int>());
+            for (int si : swapIdx)
+                m_playerHand.erase(m_playerHand.begin() + si);
+            m_playerHand.insert(m_playerHand.end(), wildCards.begin(), wildCards.end());
+            sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
+        }
+    }
+
     m_lastPlay.reset();
     m_lastPlayer = -1;
     m_playerDisplayed.clear();
     m_computerDisplayed.clear();
     m_phase = Phase::PlayerTurn;
+
+    // 掌控者调度：首轮免费
+    m_scheduleCooldown  = 0;
+    m_firstScheduleFree = true;
+    m_scheduleAvailable = false;
 
     m_playerBuffs.clear();
     m_enemyBuffs.clear();
@@ -890,8 +943,65 @@ void GameState::applyPostPlayEffects()
     // 效果在主逻辑中内联处理 (playerPlay / computerTakeTurn)
 }
 
+// ---- 掌控者「调度」----
+
+void GameState::activateScheduleIfReady()
+{
+    if (!m_isScheduler) return;
+    if (m_phase != Phase::PlayerTurn) return;
+    if (m_scheduleCooldown > 0) return;
+    m_scheduleAvailable = true;
+    m_phase = Phase::SchedulePlay;
+}
+
+bool GameState::scheduleDiscard(const std::vector<int>& handIndices)
+{
+    if (m_phase != Phase::SchedulePlay) return false;
+    int n = (int)handIndices.size();
+    if (n < 0 || n > 3) return false;
+    // 空选 = 抽0张 = 仅跳过（但走scheduleSkip更合适）
+    // 这里允许0张，效果和skip一样
+
+    if (n > 0) {
+        // 删牌 (降序防索引错位)
+        auto sorted = handIndices;
+        std::sort(sorted.begin(), sorted.end(), std::greater<int>());
+        for (int i : sorted)
+            if (i >= 0 && i < (int)m_playerHand.size())
+                m_playerHand.erase(m_playerHand.begin() + i);
+
+        // 补牌
+        int drawn = 0;
+        for (int i = 0; i < n && !m_drawPile.empty(); ++i) {
+            m_playerHand.push_back(m_drawPile.back());
+            m_drawPile.pop_back();
+            drawn++;
+        }
+        sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
+    }
+
+    m_scheduleAvailable = false;
+    m_scheduleCooldown = 2;         // 重置2轮冷却
+    m_firstScheduleFree = false;
+    m_phase = Phase::PlayerTurn;
+    return true;
+}
+
+void GameState::scheduleSkip()
+{
+    m_scheduleAvailable = false;
+    m_scheduleCooldown = 2;
+    m_firstScheduleFree = false;
+    m_phase = Phase::PlayerTurn;
+}
+
 void GameState::endPlayerTurnCleanup()
 {
+    // 掌控者调度冷却递减
+    if (m_scheduleCooldown > 0) {
+        m_scheduleCooldown--;
+    }
+
     // 被动技能效果不在此清除 — 装备即永久生效
     // 只保留 wildcardRank (角色被动)
     int savedWild = m_playerBuffs.wildcardRank;

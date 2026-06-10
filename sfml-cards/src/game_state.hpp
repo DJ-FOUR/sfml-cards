@@ -39,7 +39,7 @@ struct PlayedCards
 class GameState
 {
 public:
-    enum class Phase { PlayerTurn, ComputerTurn, MomentumPlay, PlayerWins, ComputerWins };
+    enum class Phase { PlayerTurn, ComputerTurn, SchedulePlay, MomentumPlay, PlayerWins, ComputerWins };
 
     GameState();
 
@@ -51,6 +51,8 @@ public:
     void setPlayerWildcard(int rank) { m_playerBuffs.wildcardRank = rank; }
     // 设置角色被动: 炸弹收藏家
     void setPlayerIsBombCollector(bool v) { m_isBombCollector = v; }
+    // 设置角色被动: 掌控者
+    void setPlayerIsScheduler(bool v) { m_isScheduler = v; }
     // 设置玩家装备的技能槽 — 自动应用所有被动效果
     void setPlayerSkillSlots(const std::array<int, MAX_SKILL_SLOTS>& slots);
 
@@ -69,6 +71,13 @@ public:
     bool isMomentumEnemy() const { return m_momentumIsEnemy; }
 
     bool canPlay(const std::vector<int>& handIndices) const;
+
+    // 掌控者「调度」: 过牌
+    bool isScheduleAvailable() const { return m_scheduleAvailable; }
+    int  scheduleCooldown() const { return m_scheduleCooldown; }
+    bool scheduleDiscard(const std::vector<int>& handIndices);
+    void scheduleSkip();
+    void activateScheduleIfReady();   // 回合开始时调用
 
     // 电脑自动出牌 + 技能
     std::vector<Card> computerTakeTurn();
@@ -143,6 +152,12 @@ private:
     // 角色被动: 炸弹收藏家
     bool m_isBombCollector = false;
     int  m_bombMarks = 0;
+
+    // 角色被动: 掌控者「调度」
+    bool m_isScheduler       = false;
+    bool m_scheduleAvailable = false;
+    int  m_scheduleCooldown  = 0;      // 冷却回合数
+    bool m_firstScheduleFree = true;   // 首轮免费
 
     // 敌人技能
     std::array<int, MAX_SKILL_SLOTS> m_enemySkills = {-1, -1, -1};
