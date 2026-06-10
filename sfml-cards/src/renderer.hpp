@@ -37,6 +37,7 @@ public:
     int hitTestGameButton(const sf::Vector2f& worldPos,
                           bool canPass, sf::Vector2u winSize) const;
     int hitTestMomentumButton(const sf::Vector2f& worldPos, sf::Vector2u winSize) const;
+    int hitTestScheduleButton(const sf::Vector2f& worldPos, sf::Vector2u winSize) const;
     int hitTestSkillSlot(const sf::Vector2f& worldPos, sf::Vector2u winSize) const;
     int hitTestDebugButton(const sf::Vector2f& worldPos, sf::Vector2u winSize) const;
 
@@ -202,6 +203,7 @@ private:
     float m_dealTimer = 0.f;
     float m_shakeTimer = 0.f;
     float m_momentumAnimTimer = 0.f;   // 连击之势触发动画计时
+    float m_scheduleAnimTimer = 0.f;   // 调度触发动画计时
 
     static constexpr float DEAL_STAGGER   = 0.08f;
     static constexpr float DEAL_DURATION  = 0.60f;

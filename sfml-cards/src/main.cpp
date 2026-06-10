@@ -69,8 +69,9 @@ int main()
 
     auto resetAndDealGame = [&]() {
         game.setPlayerWildcard(run.wildcardRank());
-        game.dealCards(run.extraCards());
         game.setPlayerIsBombCollector(run.currentCharId() == 0);
+        game.setPlayerIsScheduler(run.currentCharId() == 2);
+        game.dealCards(run.extraCards());
         game.setPlayerSkillSlots(run.equippedSkills());
         if (run.currentLevel() == 1)
             game.setEnemySkills({-1, -1, -1});
@@ -401,6 +402,41 @@ int main()
                     }
                 }
 
+                // ---- 掌控者「调度」: 弃牌换牌 ----
+                if (game.phase() == GameState::Phase::SchedulePlay) {
+                    if (const auto* btnS = event->getIf<sf::Event::MouseButtonPressed>()) {
+                        if (btnS->button != sf::Mouse::Button::Left) continue;
+                        sf::Vector2f posS = window.mapPixelToCoords(btnS->position);
+                        int sHit = renderer.hitTestScheduleButton(posS, winSize);
+                        if (sHit == 1) {
+                            // 过牌 — 弃选中牌并补牌
+                            auto sorted = selectedIndices;
+                            game.scheduleDiscard(sorted);
+                            selectedIndices.clear();
+                            canPlaySelected = false;
+                            aiClock.restart();
+                            aiTriggered = false;
+                        } else if (sHit == 2) {
+                            // 跳过
+                            game.scheduleSkip();
+                            selectedIndices.clear();
+                            canPlaySelected = false;
+                        } else {
+                            // 点牌选弃牌 (最多3张)
+                            int idx = renderer.hitTestCard(posS,
+                                (int)game.playerHand().size(), winSize, selectedIndices);
+                            if (idx >= 0) {
+                                auto it = std::find(selectedIndices.begin(),
+                                                    selectedIndices.end(), idx);
+                                if (it != selectedIndices.end())
+                                    selectedIndices.erase(it);
+                                else if ((int)selectedIndices.size() < 3)
+                                    selectedIndices.push_back(idx);
+                            }
+                        }
+                    }
+                }
+
                 // ---- 连击之势: 选1张牌打出 ----
                 if (game.phase() == GameState::Phase::MomentumPlay) {
                     if (const auto* btn4 = event->getIf<sf::Event::MouseButtonPressed>()) {
@@ -448,6 +484,10 @@ int main()
         }
 
         if (screen == Screen::Game) {
+            // 掌控者调度: 检查是否应进入调度阶段 (发牌动画未结束时不触发)
+            if (game.phase() == GameState::Phase::PlayerTurn && !renderer.isDealAnimating())
+                game.activateScheduleIfReady();
+
             auto sorted = selectedIndices;
             std::sort(sorted.begin(), sorted.end());
             canPlaySelected = game.canPlay(sorted);

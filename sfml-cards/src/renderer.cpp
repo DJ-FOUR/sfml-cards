@@ -1801,7 +1801,18 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     float h = (float)winSize.y;
 
     // ---- 选中牌型预览 ----
-    if (!selectedIndices.empty() && state.phase() == GameState::Phase::PlayerTurn) {
+    if ((state.phase() == GameState::Phase::PlayerTurn || state.phase() == GameState::Phase::SchedulePlay)
+        && !selectedIndices.empty()) {
+        // 调度阶段显示弃牌张数
+        if (state.phase() == GameState::Phase::SchedulePlay) {
+            sf::Text prevText(m_font,
+                L"弃牌 " + std::to_wstring((int)selectedIndices.size()) + L" / 3 张",
+                (unsigned)(h * 0.024f));
+            prevText.setFillColor(sf::Color::Black);
+            auto psz = prevText.getGlobalBounds().size;
+            prevText.setPosition({(w - psz.x) / 2.f, h * 0.81f});
+            m_window.draw(prevText);
+        } else {
         // 提取选中牌并分类
         std::vector<Card> selCards;
         auto& ph = state.playerHand();
@@ -1892,6 +1903,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         float pvY = h * 0.81f;
         prevText.setPosition({pvX, pvY});
         m_window.draw(prevText);
+        } // end else (non-Schedule)
     }
 
     std::wstring statusStr;
@@ -1900,6 +1912,10 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     case GameState::Phase::PlayerTurn:
         statusStr = state.isNewRound() ? L"[STATUS] 新一轮"
                                        : L"[STATUS] 你的回合";
+        statusCol = STREET_CYAN;
+        break;
+    case GameState::Phase::SchedulePlay:
+        statusStr = L"[调度] 选0~3张牌弃掉换牌";
         statusCol = STREET_CYAN;
         break;
     case GameState::Phase::MomentumPlay:
@@ -2167,6 +2183,41 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         }
     }
 
+    // 「调度」过牌按钮 (手牌上方居中)
+    if (state.phase() == GameState::Phase::SchedulePlay) {
+        float sBtnW = w * 0.12f;
+        float sBtnH = h * 0.055f;
+        float sBtnGap = w * 0.03f;
+        float sTotalW = sBtnW * 2 + sBtnGap;
+        float sStartX = (w - sTotalW) / 2.f;
+        float sBtnY = h * 0.56f;
+        float sFontSize = h * 0.024f;
+
+        bool skipHover = sf::FloatRect({sStartX, sBtnY}, {sBtnW, sBtnH}).contains(mousePos);
+        bool schedHover = sf::FloatRect({sStartX + sBtnW + sBtnGap, sBtnY}, {sBtnW, sBtnH}).contains(mousePos);
+
+        // 跳过按钮
+        {
+            sf::Color fill = skipHover ? STREET_PINK : STREET_BLACK;
+            drawBeveledRect(m_window, sStartX, sBtnY, sBtnW, sBtnH, 5.f, fill, OUTLINE_BLACK, 3.f);
+            sf::Text txt(m_font, L"跳过", (unsigned)sFontSize);
+            txt.setFillColor(STREET_WHITE);
+            auto tsz = txt.getGlobalBounds().size;
+            txt.setPosition({sStartX + (sBtnW - tsz.x) / 2.f, sBtnY + sBtnH * 0.22f});
+            m_window.draw(txt);
+        }
+        // 过牌按钮
+        {
+            sf::Color fill = schedHover ? STREET_CYAN : STREET_BLACK;
+            drawBeveledRect(m_window, sStartX + sBtnW + sBtnGap, sBtnY, sBtnW, sBtnH, 5.f, fill, OUTLINE_BLACK, 3.f);
+            sf::Text txt(m_font, L"过牌", (unsigned)sFontSize);
+            txt.setFillColor(STREET_WHITE);
+            auto tsz = txt.getGlobalBounds().size;
+            txt.setPosition({sStartX + sBtnW + sBtnGap + (sBtnW - tsz.x) / 2.f, sBtnY + sBtnH * 0.22f});
+            m_window.draw(txt);
+        }
+    }
+
     // 出牌/不出按钮 (手牌上方居中, 含悬停缩放动效) — 新风格
     bool isMomentum = (state.phase() == GameState::Phase::MomentumPlay);
     bool isEnemyMomentum = isMomentum && state.isMomentumEnemy();
@@ -2250,6 +2301,12 @@ void Renderer::renderGame(const GameState& state,
     } else {
         m_momentumAnimTimer = 0.f;
     }
+    // 调度动画计时
+    if (state.phase() == GameState::Phase::SchedulePlay) {
+        m_scheduleAnimTimer += dt;
+    } else {
+        m_scheduleAnimTimer = 0.f;
+    }
 
     drawBackground(winSize, true);
 
@@ -2304,11 +2361,16 @@ void Renderer::renderGame(const GameState& state,
     }
     drawPlayedCards(state.lastPlayerPlay(), playerPlayedY(h), ps, winSize);
 
-    // --- 连击之势: 全局变暗 (手牌之前绘制，手牌保持亮度) ---
+    // --- 连击之势/调度: 全局变暗 (手牌之前绘制，手牌保持亮度) ---
     if (state.phase() == GameState::Phase::MomentumPlay) {
         float fadeT = std::clamp(m_momentumAnimTimer / 0.3f, 0.f, 1.f);
         sf::RectangleShape dimOverlay({w, h});
         dimOverlay.setFillColor(sf::Color(0, 0, 0, (uint8_t)(160 * fadeT)));
+        m_window.draw(dimOverlay);
+    }
+    if (state.phase() == GameState::Phase::SchedulePlay) {
+        sf::RectangleShape dimOverlay({w, h});
+        dimOverlay.setFillColor(sf::Color(0, 0, 0, 120));
         m_window.draw(dimOverlay);
     }
 
@@ -2517,6 +2579,51 @@ void Renderer::renderGame(const GameState& state,
         hint.setStyle(sf::Text::Bold);
         auto hsz = hint.getGlobalBounds().size;
         hint.setPosition({(w - hsz.x) / 2.f, cardY + cardH + h * 0.03f});
+        m_window.draw(hint);
+    }
+
+    // --- 掌控者「调度」: 中央提示卡 (手牌之上，入场缩放动画) ---
+    if (state.phase() == GameState::Phase::SchedulePlay) {
+        // 入场缩放动画: 0→0.4s 从 0.3x 放大到 1.0x
+        float scaleT = std::clamp(m_scheduleAnimTimer / 0.4f, 0.f, 1.f);
+        float ease = 1.f - (1.f - scaleT) * (1.f - scaleT);
+        float curS = 1.0f - 0.7f * (1.f - ease);
+
+        float baseW = w * 0.10f;
+        float baseH = baseW * CARD_H / CARD_W;
+        float cardW = baseW * curS;
+        float cardH = baseH * curS;
+        float cardX = (w - cardW) / 2.f;
+        float cardY = h * 0.06f + (baseH - cardH) / 2.f;
+
+        // 卡片底框
+        drawBeveledRect(m_window, cardX, cardY, cardW, cardH, 8.f,
+                        STREET_BLACK, STREET_CYAN, 3.f);
+        // 顶部色带
+        sf::RectangleShape bar({cardW - 16.f, 4.f});
+        bar.setPosition({cardX + 8.f, cardY + 2.f});
+        bar.setFillColor(STREET_CYAN);
+        m_window.draw(bar);
+        // 八角图标
+        float iconSize = cardW * 0.35f;
+        float iconX = cardX + (cardW - iconSize) / 2.f;
+        float iconY = cardY + cardH * 0.10f;
+        drawOctagonIcon(m_window, iconX, iconY, iconSize, STREET_BLACK, STREET_CYAN, 2.f);
+        sf::Text iconText(m_font, L"S", (unsigned)(iconSize * 0.40f));
+        iconText.setFillColor(STREET_CYAN);
+        auto isz = iconText.getGlobalBounds().size;
+        iconText.setPosition({cardX + (cardW - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
+        m_window.draw(iconText);
+
+        // 提示文字 (0.15s后渐显)
+        float hintAlpha = std::clamp((m_scheduleAnimTimer - 0.15f) / 0.25f, 0.f, 1.f);
+        sf::Text hint(m_font, L"掌控者 · 调度 — 选择至多 3 张手牌弃掉换牌",
+                      (unsigned)(h * 0.022f));
+        hint.setFillColor(sf::Color(STREET_CYAN.r, STREET_CYAN.g, STREET_CYAN.b,
+                                    (uint8_t)(255 * hintAlpha)));
+        hint.setStyle(sf::Text::Bold);
+        auto hsz = hint.getGlobalBounds().size;
+        hint.setPosition({(w - hsz.x) / 2.f, cardY + cardH + h * 0.015f});
         m_window.draw(hint);
     }
 }
@@ -2841,6 +2948,24 @@ int Renderer::hitTestMomentumButton(const sf::Vector2f& worldPos,
     float btnX = (w - btnW) / 2.f;
     float btnY = h * 0.56f;
     if (sf::FloatRect({btnX, btnY}, {btnW, btnH}).contains(worldPos)) return 1;
+    return 0;
+}
+
+int Renderer::hitTestScheduleButton(const sf::Vector2f& worldPos,
+                                     sf::Vector2u winSize) const
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    float btnW = w * 0.12f;
+    float btnH = h * 0.055f;
+    float btnGap = w * 0.03f;
+    float totalW = btnW * 2 + btnGap;
+    float startX = (w - totalW) / 2.f;
+    float btnY = h * 0.56f;
+    // 跳过
+    if (sf::FloatRect({startX, btnY}, {btnW, btnH}).contains(worldPos)) return 2;
+    // 过牌
+    if (sf::FloatRect({startX + btnW + btnGap, btnY}, {btnW, btnH}).contains(worldPos)) return 1;
     return 0;
 }
 
