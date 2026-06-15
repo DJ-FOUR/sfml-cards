@@ -58,6 +58,7 @@ public:
     void drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                         int level, const std::vector<int>& acquiredSkills,
                         const std::array<int, MAX_SKILL_SLOTS>& equipped,
+                        const std::array<int, MAX_SKILL_SLOTS>& enemySkills,
                         int hoveredAcquiredIdx, int hoveredSlotIdx,
                         int dragSourceType, int dragSourceIndex,
                         int dragSkillId, bool isDragging);
@@ -68,6 +69,7 @@ public:
                                int acquiredCount);
     bool hitTransitionPool(const sf::Vector2f& pos, sf::Vector2u winSize);
     sf::FloatRect transitionPoolCardRect(int cardIndex, sf::Vector2u winSize) const;
+    sf::Vector2f transitionSlotCenter(int slotIndex, sf::Vector2u winSize) const;
 
     // ---- 奖励界面 (过关后选技能) ----
     void drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
@@ -91,6 +93,9 @@ public:
     void startDealAnimation(int cardCount);
     bool isDealAnimating() const { return m_dealActive; }
 
+    // 炸弹生成动画 (新卡牌飞入)
+    void startBombDealAnimation(const std::vector<int>& cardIndices);
+
     // 音量控制
     void setMusicVolume(float v);
     void setSoundVolume(float v);
@@ -103,6 +108,13 @@ public:
     struct SettingsHitResult { int action = 0; float sliderVal = 0.f; };
     SettingsHitResult hitTestSettings(const sf::Vector2f& pos, sf::Vector2u winSize);
     int hitTestSettingsButton(const sf::Vector2f& pos, sf::Vector2u winSize);
+
+    // 过渡界面 — 飞牌动画 (双击装备/卸下)
+    void startTransitionFly(sf::Vector2f src, sf::Vector2f dst, int skillId,
+                            bool toSlot, int poolIdx, int slotIdx);
+    bool isTransitionFlyDone() const { return m_flyProgress < 0.f; }
+    int  transitionFlySkillId() const { return m_flySkillId; }
+    bool transitionFlyToSlot() const { return m_flyToSlot; }
 
 private:
     sf::RenderWindow& m_window;
@@ -168,7 +180,8 @@ private:
 
     // 通用: 技能卡片
     void drawSkillCard(float x, float y, float w, float h,
-                       int skillId, bool owned, bool hover, sf::Vector2u winSize);
+                       int skillId, bool owned, bool hover, sf::Vector2u winSize,
+                       sf::RenderTarget* target = nullptr);
     sf::FloatRect skillCardRect(int idx, int total, sf::Vector2u winSize) const;
 
     // ---------- 角色卡片悬停交互 ----------
@@ -204,11 +217,31 @@ private:
     std::vector<CardDealAnim> m_dealAnim;
     bool m_dealActive = false;
     float m_dealTimer = 0.f;
+
+    // 炸弹生成动画 (新卡牌飞入)
+    std::vector<CardDealAnim> m_bombDealAnim;
+    bool m_bombDealActive = false;
+    float m_bombDealTimer = 0.f;
+    std::vector<int> m_bombCardIndices;   // 炸弹牌在手牌中的实际索引 (动画目标)
+    std::vector<int> m_prevHandImgIndices; // 上一帧手牌的imageIndex列表
+
+    // 过渡界面 — 卡池悬停动效 (当前使用 drawSkillCard 内建 hover)
+
+    // 过渡界面 — 双击飞牌动画
+    float m_flyProgress = -1.f;    // <0 = 不活跃, 0→1 = 飞行中
+    sf::Vector2f m_flySrc, m_flyDst;
+    int  m_flySkillId = -1;
+    int  m_flyPoolIdx = -1;        // 飞牌来源: 卡池索引
+    int  m_flySlotIdx = -1;        // 飞牌来源: 装备槽索引
+    bool m_flyToSlot = true;
+
     float m_shakeTimer = 0.f;
     float m_momentumAnimTimer = 0.f;   // 连击之势触发动画计时
     float m_scheduleAnimTimer = 0.f;   // 调度触发动画计时
     float m_scheduleFlyProgress = -1.f; // 调度立绘飞行动画: <0=不活跃, 0→1=飞行中
     bool  m_wasSchedulePlay = false;    // 上一帧是否在调度阶段
+    bool  m_pendingScheduleFly = false; // 卡牌动画结束后再启动立绘飞行
+    GameState::Phase m_prevPhase = GameState::Phase::PlayerTurn;
 
     static constexpr float DEAL_STAGGER   = 0.08f;
     static constexpr float DEAL_DURATION  = 0.60f;

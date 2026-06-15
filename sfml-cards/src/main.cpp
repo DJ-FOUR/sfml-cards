@@ -59,6 +59,17 @@ int main()
     float dragStartY     = 0.f;
     constexpr float DRAG_THRESHOLD = 5.0f;
 
+    // ---- 过渡界面双击 ----
+    sf::Clock dblClickClock;
+    int  lastClickedPoolIdx = -1;
+    int  lastClickedSlotIdx = -1;
+    constexpr float DBL_CLICK_INTERVAL = 0.35f;
+    bool pendingEquip = false;   // 飞牌完成后执行装备
+    bool pendingUnequip = false;
+    int  pendingEquipSid = -1;
+    int  pendingEquipSlot = -1;
+    int  pendingUnequipSlot = -1;
+
     // ---- 游戏阶段状态 ----
     bool phaseHandled = false;
     std::vector<int> rewardSkills; // 当前奖励界面的3个技能
@@ -225,24 +236,60 @@ int main()
                     int fightHit = renderer.hitTransitionFight(pos, winSize);
 
                     if (poolHit >= 0) {
-                        // 按下卡池卡片 → 已装备的技能不响应拖拽
+                        // 按下卡池卡片 → 已装备的技能不响应
                         int sid = run.acquiredSkills()[poolHit];
                         if (run.equippedSlotOf(sid) < 0) {
-                            dragSourceType = 1;
-                            dragSourceIndex = poolHit;
-                            dragSkillId = sid;
+                            float elapsed = dblClickClock.getElapsedTime().asSeconds();
+                            if (poolHit == lastClickedPoolIdx && elapsed < DBL_CLICK_INTERVAL) {
+                                // 双击 → 飞入装备槽
+                                int targetSlot = -1;
+                                for (int s = 0; s < MAX_SKILL_SLOTS; ++s)
+                                    if (run.equippedSkills()[s] < 0) { targetSlot = s; break; }
+                                if (targetSlot >= 0) {
+                                    sf::Vector2f src = {mw.x, mw.y}; // 飞牌起始位置用点击位置
+                                    sf::Vector2f dst = renderer.transitionSlotCenter(targetSlot, winSize);
+                                    renderer.startTransitionFly(src, dst, sid, true, poolHit, -1);
+                                    pendingEquip = true;
+                                    pendingEquipSid = sid;
+                                    pendingEquipSlot = targetSlot;
+                                }
+                                lastClickedPoolIdx = -1;
+                                dblClickClock.restart();
+                            } else {
+                                // 单击 → 准备拖拽
+                                dblClickClock.restart();
+                                lastClickedPoolIdx = poolHit;
+                                dragSourceType = 1;
+                                dragSourceIndex = poolHit;
+                                dragSkillId = sid;
+                                dragActive = false;
+                                dragStartX = mw.x;
+                                dragStartY = mw.y;
+                            }
+                        }
+                    } else if (slHit >= 0 && run.equippedSkills()[slHit] >= 0) {
+                        float elapsed = dblClickClock.getElapsedTime().asSeconds();
+                        if (slHit == lastClickedSlotIdx && elapsed < DBL_CLICK_INTERVAL) {
+                            // 双击 → 飞回卡池
+                            int sid = run.equippedSkills()[slHit];
+                            sf::Vector2f dst = {mw.x, mw.y}; // 目标用点击位置
+                            sf::Vector2f src = renderer.transitionSlotCenter(slHit, winSize);
+                            renderer.startTransitionFly(src, dst, sid, false, -1, slHit);
+                            pendingUnequip = true;
+                            pendingUnequipSlot = slHit;
+                            lastClickedSlotIdx = -1;
+                            dblClickClock.restart();
+                        } else {
+                            // 单击 → 准备拖拽
+                            dblClickClock.restart();
+                            lastClickedSlotIdx = slHit;
+                            dragSourceType = 2;
+                            dragSourceIndex = slHit;
+                            dragSkillId = run.equippedSkills()[slHit];
                             dragActive = false;
                             dragStartX = mw.x;
                             dragStartY = mw.y;
                         }
-                    } else if (slHit >= 0 && run.equippedSkills()[slHit] >= 0) {
-                        // 按下已装备槽 → 开始拖拽
-                        dragSourceType = 2;
-                        dragSourceIndex = slHit;
-                        dragSkillId = run.equippedSkills()[slHit];
-                        dragActive = false;
-                        dragStartX = mw.x;
-                        dragStartY = mw.y;
                     } else if (fightHit == 1) {
                         // 开始战斗
                         resetAndDealGame();
@@ -497,6 +544,19 @@ int main()
                 dragActive = true;
         }
 
+        // 过渡界面飞牌完成 → 执行装备/卸下
+        if (renderer.isTransitionFlyDone()) {
+            int flySid = renderer.transitionFlySkillId();
+            bool toSlot = renderer.transitionFlyToSlot();
+            if (toSlot && pendingEquip) {
+                run.equipSkill(pendingEquipSlot, pendingEquipSid);
+                pendingEquip = false;
+            } else if (!toSlot && pendingUnequip) {
+                run.unequipSlot(pendingUnequipSlot);
+                pendingUnequip = false;
+            }
+        }
+
         if (screen == Screen::Game) {
             // 掌控者调度: 检查是否应进入调度阶段 (发牌动画未结束时不触发)
             if (game.phase() == GameState::Phase::PlayerTurn && !renderer.isDealAnimating())
@@ -589,7 +649,8 @@ int main()
         case Screen::Transition:
             renderer.drawTransition(winSize, mw,
                 run.currentLevel(), run.acquiredSkills(),
-                run.equippedSkills(), hoveredAcquiredIdx, hoveredSlotIdx,
+                run.equippedSkills(), run.mirroredSkills(),
+                hoveredAcquiredIdx, hoveredSlotIdx,
                 dragSourceType, dragSourceIndex, dragSkillId, dragActive);
             break;
         case Screen::Game:

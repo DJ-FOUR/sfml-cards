@@ -60,7 +60,7 @@ std::wstring skillTypeLabel(SkillType t) {
 }
 
 // 绘制技能八角形图标框
-void drawOctagonIcon(sf::RenderWindow& window,
+void drawOctagonIcon(sf::RenderTarget& window,
     float iconX, float iconY, float iconSize,
     sf::Color fillColor, sf::Color outlineColor, float outlineThickness = 1.f)
 {
@@ -81,7 +81,7 @@ void drawOctagonIcon(sf::RenderWindow& window,
 }
 
 // 绘制切角矩形（八边形）
-void drawBeveledRect(sf::RenderWindow& window, float x, float y, float w, float h, float cut,
+void drawBeveledRect(sf::RenderTarget& window, float x, float y, float w, float h, float cut,
                      sf::Color fill, sf::Color outline, float outlineThick)
 {
     sf::ConvexShape shape(8);
@@ -451,6 +451,39 @@ void Renderer::updateAnimations(float dt)
             m_dealAnim.clear();
         }
     }
+
+    // 炸弹生成动画更新
+    if (m_bombDealActive) {
+        m_bombDealTimer += dt;
+        bool allDone = true;
+        for (auto& a : m_bombDealAnim) {
+            if (!a.started && m_bombDealTimer >= a.delay) {
+                a.started = true;
+            }
+            if (a.started && a.progress < 1.f) {
+                a.progress += dt / DEAL_DURATION;
+                if (a.progress > 1.f) a.progress = 1.f;
+            }
+            if (a.progress < 1.f) allDone = false;
+        }
+        if (allDone) {
+            m_bombDealActive = false;
+            m_bombDealAnim.clear();
+            // 卡牌飞入结束 → 触发待执行的调度立绘飞行
+            if (m_pendingScheduleFly) {
+                m_scheduleFlyProgress = 0.f;
+                m_pendingScheduleFly = false;
+            }
+        }
+    }
+
+    // 过渡界面飞牌动画更新
+    if (m_flyProgress >= 0.f) {
+        m_flyProgress += dt / 0.35f;  // 0.35s 飞行时间
+        if (m_flyProgress >= 1.f)
+            m_flyProgress = -1.f;      // 动画结束
+    }
+
 }
 
 void Renderer::playHoverTick()
@@ -463,13 +496,25 @@ void Renderer::playHoverTick()
 void Renderer::setMusicVolume(float v)
 {
     m_musicVolume = std::clamp(v, 0.f, 100.f);
-    m_bgMusic.setVolume(m_musicVolume);
+    m_bgMusic.setVolume(m_musicVolume * 0.5f);
 }
 
 void Renderer::setSoundVolume(float v)
 {
     m_soundVolume = std::clamp(v, 0.f, 100.f);
     if (m_hoverSnd) m_hoverSnd->setVolume(m_soundVolume);
+}
+
+void Renderer::startTransitionFly(sf::Vector2f src, sf::Vector2f dst, int skillId,
+                                   bool toSlot, int poolIdx, int slotIdx)
+{
+    m_flySrc = src;
+    m_flyDst = dst;
+    m_flySkillId = skillId;
+    m_flyToSlot = toSlot;
+    m_flyPoolIdx = poolIdx;
+    m_flySlotIdx = slotIdx;
+    m_flyProgress = 0.f;
 }
 
 void Renderer::setSkillSlotLifted(int slotIndex, bool lifted)
@@ -499,6 +544,21 @@ void Renderer::startDealAnimation(int cardCount)
     }
     m_dealTimer  = 0.f;
     m_dealActive = true;
+}
+
+void Renderer::startBombDealAnimation(const std::vector<int>& cardIndices)
+{
+    int count = (int)cardIndices.size();
+    m_bombDealAnim.clear();
+    m_bombDealAnim.resize(count);
+    for (int i = 0; i < count; ++i) {
+        m_bombDealAnim[i].delay    = i * DEAL_STAGGER;
+        m_bombDealAnim[i].progress = 0.f;
+        m_bombDealAnim[i].started  = false;
+    }
+    m_bombCardIndices = cardIndices;
+    m_bombDealTimer   = 0.f;
+    m_bombDealActive  = true;
 }
 
 // 将单张角色卡片的内容绘制到预分配的 RenderTexture
@@ -726,15 +786,16 @@ sf::FloatRect Renderer::skillCardRect(int idx, int total, sf::Vector2u winSize) 
 
 void Renderer::drawSkillCard(float x, float y, float w, float h,
                               int skillId, bool owned, bool hover,
-                              sf::Vector2u winSize)
+                              sf::Vector2u winSize, sf::RenderTarget* target)
 {
     (void)winSize;
+    auto& rt = target ? *target : m_window;
     auto& skills = getAllSkills();
     float cut = 10.f;
 
     if (skillId < 0 || skillId >= SKILL_COUNT) {
         // 空槽位（切角矩形）
-        drawBeveledRect(m_window, x, y, w, h, 6.f,
+        drawBeveledRect(rt, x, y, w, h, 6.f,
                         slotEmptyColor, BORDER_NORMAL, 1.f);
         return;
     }
@@ -746,13 +807,13 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     sf::Color fill = owned ? skillCardOwned
                    : (hover ? sf::Color(typeColor.r/5, typeColor.g/5, typeColor.b/5) : STREET_BLACK);
     sf::Color outline = hover ? typeColor : OUTLINE_BLACK;
-    drawBeveledRect(m_window, x, y, w, h, cut, fill, outline, hover ? 4.f : 3.f);
+    drawBeveledRect(rt, x, y, w, h, cut, fill, outline, hover ? 4.f : 3.f);
 
     // 顶部色带 — 跟随技能类型色
     sf::RectangleShape topBar({w - cut * 2, h * 0.04f});
     topBar.setPosition({x + cut, y + 2.f});
     topBar.setFillColor(hover ? typeColor : sf::Color(26, 26, 26));
-    m_window.draw(topBar);
+    rt.draw(topBar);
 
     // 已拥有角标 — 荧光粉底黑字粗描边
     if (owned) {
@@ -761,20 +822,20 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
         ownedTag.setFillColor(STREET_PINK);
         ownedTag.setOutlineColor(OUTLINE_BLACK);
         ownedTag.setOutlineThickness(2.f);
-        m_window.draw(ownedTag);
+        rt.draw(ownedTag);
         sf::Text ownedText(m_font, L"OWNED", (unsigned)(h * 0.035f));
         ownedText.setFillColor(OUTLINE_BLACK);
         ownedText.setStyle(sf::Text::Bold);
         auto osz = ownedText.getGlobalBounds().size;
         ownedText.setPosition({x + (w * 0.28f - osz.x) / 2.f, y + 4.f + (h * 0.045f - osz.y) / 2.f - 2.f});
-        m_window.draw(ownedText);
+        rt.draw(ownedText);
     }
 
     // [IMG-SKILL-S01~S08] 技能图标占位（线框八角形 + 内部波点）
     float iconSize = w * 0.30f;
     float iconX = x + (w - iconSize) / 2.f;
     float iconY = y + h * 0.08f;
-    drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), OUTLINE_BLACK, 3.f);
+    drawOctagonIcon(rt, iconX, iconY, iconSize, sf::Color(10, 10, 10), OUTLINE_BLACK, 3.f);
     // 内部波点纹理
     float dotSize = iconSize * 0.06f;
     float spacing = dotSize * 2.5f;
@@ -783,7 +844,7 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
             sf::CircleShape dot(dotSize);
             dot.setPosition({dx, dy});
             dot.setFillColor(sf::Color(typeColor.r/4, typeColor.g/4, typeColor.b/4));
-            m_window.draw(dot);
+            rt.draw(dot);
         }
     }
 
@@ -792,7 +853,7 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     iconText.setFillColor(typeColor);
     auto isz = iconText.getGlobalBounds().size;
     iconText.setPosition({x + (w - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
-    m_window.draw(iconText);
+    rt.draw(iconText);
 
     // 技能名 — 居中于图标和底部信息栏之间（粗黑描底）
     float iconBot = iconY + iconSize;
@@ -803,26 +864,26 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
     nameShadow.setStyle(sf::Text::Bold);
     auto nsz = nameShadow.getGlobalBounds().size;
     nameShadow.setPosition({x + (w - nsz.x) / 2.f + 2.f, (iconBot + infoTop - nsz.y) / 2.f + 2.f});
-    m_window.draw(nameShadow);
+    rt.draw(nameShadow);
 
     sf::Text name(m_font, sk.name, (unsigned)nameF);
     name.setFillColor(STREET_WHITE);
     name.setStyle(sf::Text::Bold);
     name.setPosition({x + (w - nsz.x) / 2.f, (iconBot + infoTop - nsz.y) / 2.f});
-    m_window.draw(name);
+    rt.draw(name);
 
     // 底部黑条区域
     sf::RectangleShape infoBar({w - cut * 2, h * 0.055f});
     infoBar.setPosition({x + cut, y + h - h * 0.065f});
     infoBar.setFillColor(sf::Color(5, 5, 5));
-    m_window.draw(infoBar);
+    rt.draw(infoBar);
 
     std::wstring typeStr = skillTypeLabel(sk.type);
     sf::Text costText(m_font, typeStr, (unsigned)(h * 0.032f));
     costText.setFillColor(typeColor);
     auto csz = costText.getGlobalBounds().size;
     costText.setPosition({x + (w - csz.x) / 2.f, y + h - h * 0.058f});
-    m_window.draw(costText);
+    rt.draw(costText);
 }
 
 // ====== 主菜单 ======
@@ -1040,35 +1101,22 @@ int Renderer::hitWildcardSelect(const sf::Vector2f& pos, sf::Vector2u winSize)
 
 // ====== 关卡过渡 (装备技能) ======
 
-// ---- Transition 卡池布局 ----
-struct TransitionPoolLayout {
-    float cardW, cardH, poolX, poolY, colGap, rowGap;
-    static constexpr int COLS = 2;
-};
-
-static TransitionPoolLayout calcTransitionPoolLayout(sf::Vector2u winSize)
+sf::FloatRect Renderer::transitionPoolCardRect(int cardIndex, sf::Vector2u winSize) const
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
-    float cardH = h * 0.16f;                 // 竖版卡牌 7:12
-    float cardW = cardH * Renderer::CARD_W / Renderer::CARD_H;
-    return {
-        cardW, cardH,
-        w * 0.06f,       // poolX
-        h * 0.14f,       // poolY
-        w * 0.03f,       // colGap
-        h * 0.015f       // rowGap
-    };
-}
-
-sf::FloatRect Renderer::transitionPoolCardRect(int cardIndex, sf::Vector2u winSize) const
-{
-    auto L = calcTransitionPoolLayout(winSize);
-    int col = cardIndex % L.COLS;
-    int row = cardIndex / L.COLS;
-    float x = L.poolX + col * (L.cardW + L.colGap);
-    float y = L.poolY + row * (L.cardH + L.rowGap);
-    return {{x, y}, {L.cardW, L.cardH}};
+    float cardH = h * 0.16f;
+    float cardW = cardH * CARD_W / CARD_H;
+    float poolX = w * 0.06f;
+    float poolY = h * 0.14f;
+    float colGap = w * 0.03f;
+    float rowGap = h * 0.015f;
+    static constexpr int COLS = 2;
+    int col = cardIndex % COLS;
+    int row = cardIndex / COLS;
+    float x = poolX + col * (cardW + colGap);
+    float y = poolY + row * (cardH + rowGap);
+    return {{x, y}, {cardW, cardH}};
 }
 
 int Renderer::hitTransitionPoolCard(const sf::Vector2f& pos, sf::Vector2u winSize,
@@ -1082,17 +1130,40 @@ int Renderer::hitTransitionPoolCard(const sf::Vector2f& pos, sf::Vector2u winSiz
 
 bool Renderer::hitTransitionPool(const sf::Vector2f& pos, sf::Vector2u winSize)
 {
-    auto L = calcTransitionPoolLayout(winSize);
-    int maxRows = (SKILL_COUNT + L.COLS - 1) / L.COLS;
-    float areaW = L.COLS * L.cardW + (L.COLS - 1) * L.colGap + (float)winSize.x * 0.04f;
-    float areaH = maxRows * L.cardH + (maxRows - 1) * L.rowGap + (float)winSize.y * 0.03f;
-    return sf::FloatRect({L.poolX - (float)winSize.x * 0.02f,
-                          L.poolY - (float)winSize.y * 0.015f}, {areaW, areaH}).contains(pos);
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    float cardH = h * 0.16f;
+    float cardW = cardH * CARD_W / CARD_H;
+    float poolX = w * 0.06f;
+    float poolY = h * 0.14f;
+    float colGap = w * 0.03f;
+    float rowGap = h * 0.015f;
+    static constexpr int COLS = 2;
+    int maxRows = (SKILL_COUNT + COLS - 1) / COLS;
+    float areaW = COLS * cardW + (COLS - 1) * colGap + w * 0.04f;
+    float areaH = maxRows * cardH + (maxRows - 1) * rowGap + h * 0.03f;
+    return sf::FloatRect({poolX - w * 0.02f, poolY - h * 0.015f},
+                         {areaW, areaH}).contains(pos);
+}
+
+sf::Vector2f Renderer::transitionSlotCenter(int slotIndex, sf::Vector2u winSize) const
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    float slotH = h * 0.20f;
+    float slotW = slotH * CARD_W / CARD_H;
+    float slotGap = w * 0.03f;
+    float rightX = w * 0.53f;
+    float slotStartY = h * 0.14f;
+    float x = rightX + slotIndex * (slotW + slotGap) + slotW / 2.f;
+    float y = slotStartY + slotH / 2.f;
+    return {x, y};
 }
 
 void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                                int level, const std::vector<int>& acquiredSkills,
                                const std::array<int, MAX_SKILL_SLOTS>& equipped,
+                               const std::array<int, MAX_SKILL_SLOTS>& enemySkills,
                                int hoveredAcquiredIdx, int hoveredSlotIdx,
                                int dragSourceType, int dragSourceIndex,
                                int dragSkillId, bool isDragging)
@@ -1103,40 +1174,29 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     float w = (float)winSize.x;
     float h = (float)winSize.y;
 
-    // 标题
-    drawTitle(L"第 " + std::to_wstring(level) + L" 关", 0.05f, winSize);
-
     auto& allSkills = getAllSkills();
 
-    // ---- 卡池布局计算 ----
-    auto L = calcTransitionPoolLayout(winSize);
+    // ---- 左侧: 已获得技能卡池 (2列网格, 无背景框) ----
+    float poolCardH = h * 0.16f;
+    float poolCardW = poolCardH * CARD_W / CARD_H;
+    float poolX2 = w * 0.06f;
+    float poolY = h * 0.14f;
+    float colGap = w * 0.03f;
+    float rowGap = h * 0.015f;
+    static constexpr int POOL_COLS = 2;
 
-    // ---- 左侧: 已获得技能卡池 ----
     sf::Text heading(m_font, L"已获得协议", (unsigned)(h * 0.028f));
     heading.setFillColor(TEXT_DIM);
-    heading.setPosition({L.poolX, L.poolY - h * 0.04f});
+    heading.setPosition({poolX2, poolY - h * 0.04f});
     m_window.draw(heading);
-
-    // 卡池背景 — 从槽位拖出时高亮
-    bool poolHighlight = isDragging && dragSourceType == 2;
-    int totalRows = ((int)acquiredSkills.size() + L.COLS - 1) / L.COLS;
-    if (totalRows < 1) totalRows = 1;
-    float poolBgW = L.COLS * L.cardW + (L.COLS - 1) * L.colGap + w * 0.04f;
-    float poolBgH = totalRows * L.cardH + (totalRows - 1) * L.rowGap + h * 0.03f;
-    sf::RectangleShape poolBg({poolBgW, poolBgH});
-    poolBg.setPosition({L.poolX - w * 0.02f, L.poolY - h * 0.015f});
-    poolBg.setFillColor(poolHighlight ? sf::Color(STREET_CYAN.r/6, STREET_CYAN.g/6, STREET_CYAN.b/6, 180) : sf::Color(10, 10, 10, 120));
-    poolBg.setOutlineColor(poolHighlight ? STREET_CYAN : OUTLINE_BLACK);
-    poolBg.setOutlineThickness(3.f);
-    m_window.draw(poolBg);
 
     for (size_t i = 0; i < acquiredSkills.size(); ++i) {
         int sid = acquiredSkills[i];
         if (sid < 0 || sid >= SKILL_COUNT) continue;
-        int col = (int)i % L.COLS;
-        int row = (int)i / L.COLS;
-        float cx = L.poolX + col * (L.cardW + L.colGap);
-        float cy = L.poolY + row * (L.cardH + L.rowGap);
+        int col = (int)i % POOL_COLS;
+        int row = (int)i / POOL_COLS;
+        float cx = poolX2 + col * (poolCardW + colGap);
+        float cy = poolY + row * (poolCardH + rowGap);
 
         bool isEquipped = false;
         for (int e = 0; e < MAX_SKILL_SLOTS; ++e)
@@ -1144,29 +1204,37 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         bool hover = ((int)i == hoveredAcquiredIdx);
         bool isBeingDragged = isDragging && dragSourceType == 1
                               && dragSourceIndex == (int)i;
+        bool isFlyingAway = (m_flyProgress >= 0.f && (int)i == m_flyPoolIdx && !m_flyToSlot);
 
-        if (isBeingDragged || isEquipped) {
-            // 占位孔: 拖拽中或已装备的技能显示为空槽
-            drawBeveledRect(m_window, cx, cy, L.cardW, L.cardH, 10.f,
-                            sf::Color(20, 20, 20, 60), BORDER_NORMAL, 1.f);
-            if (isEquipped && !isBeingDragged) {
-                // 已装备提示
-                sf::Text equippedHint(m_font, L"已装备", (unsigned)(L.cardH * 0.09f));
+        if (isBeingDragged || isEquipped || isFlyingAway) {
+            if (isEquipped && !isBeingDragged && !isFlyingAway) {
+                sf::Text equippedHint(m_font, L"已装备", (unsigned)(poolCardH * 0.09f));
                 equippedHint.setFillColor(TEXT_DISABLED);
                 auto ehsz = equippedHint.getGlobalBounds().size;
-                equippedHint.setPosition({cx + (L.cardW - ehsz.x) / 2.f, cy + L.cardH * 0.80f});
+                equippedHint.setPosition({cx + (poolCardW - ehsz.x) / 2.f, cy + poolCardH * 0.80f});
                 m_window.draw(equippedHint);
             }
         } else {
-            drawSkillCard(cx, cy, L.cardW, L.cardH, sid, false, hover, winSize);
+            drawSkillCard(cx, cy, poolCardW, poolCardH, sid, false, hover, winSize);
         }
     }
 
     if (acquiredSkills.empty()) {
         sf::Text empty(m_font, L"暂无技能 (击败敌人后获得)", (unsigned)(h * 0.026f));
         empty.setFillColor(sf::Color(128, 128, 128));
-        empty.setPosition({L.poolX, L.poolY});
+        empty.setPosition({poolX2, poolY});
         m_window.draw(empty);
+    }
+
+    // ---- 飞牌动画 (卡牌直接移动) ----
+    if (m_flyProgress >= 0.f) {
+        float t = m_flyProgress;
+        float eased = easeOutCubic(t);
+        float gx = m_flySrc.x + (m_flyDst.x - m_flySrc.x) * eased;
+        float gy = m_flySrc.y + (m_flyDst.y - m_flySrc.y) * eased;
+        float gW = poolCardW * (m_flyToSlot ? (1.f - 0.15f * eased) : 1.f);
+        float gH = poolCardH * (m_flyToSlot ? (1.f - 0.15f * eased) : 1.f);
+        drawSkillCard(gx - gW / 2.f, gy - gH / 2.f, gW, gH, m_flySkillId, false, true, winSize);
     }
 
     // ---- 右侧: 装备槽 ----
@@ -1188,13 +1256,14 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         bool isDropTarget = isDragging && slotHover;
         bool isBeingDraggedFrom = isDragging && dragSourceType == 2
                                   && dragSourceIndex == i;
+        bool isFlyingFromSlot = (m_flyProgress >= 0.f && i == m_flySlotIdx && !m_flyToSlot);
         bool highlight = slotHover || isDropTarget;
 
         float slotCut = 4.f;
         float baseY = slotStartY + (highlight ? -2.f : 0.f);
 
-        // 被拖出时显示空槽样式
-        int drawSid = isBeingDraggedFrom ? -1 : sid;
+        // 被拖出或飞回卡池时显示空槽
+        int drawSid = (isBeingDraggedFrom || isFlyingFromSlot) ? -1 : sid;
 
         sf::Color sfill = slotEmptyColor;
         sf::Color soutline = OUTLINE_BLACK;
@@ -1251,60 +1320,18 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         }
     }
 
-    // ---- 技能说明 (鼠标悬停卡池或装备槽时显示) ----
+    // ---- 技能说明声明 (敌人卡牌可追加触发) ----
     bool showSkillDesc = (hoveredAcquiredIdx >= 0
                        && hoveredAcquiredIdx < (int)acquiredSkills.size())
                       || (hoveredSlotIdx >= 0 && equipped[hoveredSlotIdx] >= 0);
-    float descY = slotStartY + slotH + h * 0.005f;
+    int hoveredSid = -1;
+    if (hoveredAcquiredIdx >= 0 && hoveredAcquiredIdx < (int)acquiredSkills.size())
+        hoveredSid = acquiredSkills[hoveredAcquiredIdx];
+    else if (hoveredSlotIdx >= 0 && equipped[hoveredSlotIdx] >= 0)
+        hoveredSid = equipped[hoveredSlotIdx];
 
-    if (showSkillDesc) {
-        int hoveredSid = -1;
-        if (hoveredAcquiredIdx >= 0 && hoveredAcquiredIdx < (int)acquiredSkills.size())
-            hoveredSid = acquiredSkills[hoveredAcquiredIdx];
-        else if (hoveredSlotIdx >= 0 && equipped[hoveredSlotIdx] >= 0)
-            hoveredSid = equipped[hoveredSlotIdx];
-        if (hoveredSid >= 0 && hoveredSid < SKILL_COUNT) {
-            auto& sk = allSkills[hoveredSid];
-
-            // 说明背景
-            float descW = slotW * 3.f + slotGap * 2.f;
-            float descH = h * 0.065f;
-            sf::Color tc = skillTypeStreetColor(sk.type);
-            sf::RectangleShape descBg({descW, descH});
-            descBg.setPosition({rightX, descY});
-            descBg.setFillColor(sf::Color(15, 15, 15, 200));
-            descBg.setOutlineColor(tc);
-            descBg.setOutlineThickness(3.f);
-            m_window.draw(descBg);
-
-            // 技能名称
-            float nameFont = (unsigned)(h * 0.026f);
-            sf::Text nameText(m_font, sk.name, (unsigned)nameFont);
-            nameText.setFillColor(tc);
-            nameText.setStyle(sf::Text::Bold);
-            nameText.setPosition({rightX + w * 0.01f, descY + descH * 0.05f});
-            m_window.draw(nameText);
-
-            // 技能类型标签
-            auto st = sk.type;
-            std::wstring typeStr = skillTypeLabel(st);
-            sf::Text typeTag(m_font, typeStr, (unsigned)(h * 0.018f));
-            typeTag.setFillColor(tc);
-            auto ttsz = nameText.getGlobalBounds().size;
-            typeTag.setPosition({rightX + w * 0.01f + ttsz.x + w * 0.015f,
-                                 descY + descH * 0.08f});
-            m_window.draw(typeTag);
-
-            // 技能描述
-            sf::Text descText(m_font, sk.desc, (unsigned)(h * 0.021f));
-            descText.setFillColor(sf::Color(220, 220, 220));
-            descText.setPosition({rightX + w * 0.01f, descY + descH * 0.50f});
-            m_window.draw(descText);
-        }
-    }
-
-    // ---- 敌人预览 ----
-    float enemyY = showSkillDesc ? (descY + h * 0.075f) : (slotStartY + slotH + h * 0.03f);
+    // ---- 敌人预览 (mirrored skills) ----
+    float enemyY = slotStartY + slotH + h * 0.03f;
     sf::Text enemyHeading(m_font, L"敌方继承协议", (unsigned)(h * 0.028f));
     enemyHeading.setFillColor(STREET_PINK);
     enemyHeading.setStyle(sf::Text::Bold);
@@ -1317,20 +1344,55 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         noSkill.setPosition({rightX, enemyY + h * 0.035f});
         m_window.draw(noSkill);
     } else {
+        float enemyCardH = slotH;
+        float enemyCardW = slotW;
+        float enemyCardGap = slotGap;
+        int enemyHovered = -1;
         for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
-            int sid = equipped[i];
-            std::wstring label;
-            if (sid >= 0) {
-                auto& sk = allSkills[sid];
-                label = L"[" + sk.name + L"]";
-            } else {
-                label = L"[空]";
-            }
-            sf::Text es(m_font, label, (unsigned)(h * 0.026f));
-            es.setFillColor(sid >= 0 ? sf::Color(255, 200, 100) : sf::Color(120, 120, 120));
-            es.setPosition({rightX + w * 0.12f * i, enemyY + h * 0.035f});
-            m_window.draw(es);
+            int sid = enemySkills[i];
+            float ecx = rightX + i * (enemyCardW + enemyCardGap);
+            float ecy = enemyY + h * 0.035f;
+            bool ehover = sf::FloatRect({ecx, ecy}, {enemyCardW, enemyCardH}).contains(mousePos);
+            if (ehover && sid >= 0) enemyHovered = i;
+            drawSkillCard(ecx, ecy, enemyCardW, enemyCardH, sid, false, ehover, winSize);
         }
+        if (enemyHovered >= 0 && enemySkills[enemyHovered] >= 0) {
+            showSkillDesc = true;
+            hoveredSid = enemySkills[enemyHovered];
+        }
+    }
+
+    // ---- 技能说明 (敌人卡牌下方, 右侧) ----
+    if (showSkillDesc && hoveredSid >= 0 && hoveredSid < SKILL_COUNT) {
+        auto& sk = allSkills[hoveredSid];
+        float descW = w * 0.36f;
+        float descH = h * 0.08f;
+        float descX = rightX;
+        float descY = enemyY + h * 0.035f + slotH + h * 0.015f;
+        sf::Color tc = skillTypeStreetColor(sk.type);
+        drawBeveledRect(m_window, descX, descY, descW, descH, 8.f,
+                        sf::Color(15, 15, 15, 220), tc, 3.f);
+
+        float nameFont = (unsigned)(h * 0.026f);
+        sf::Text nameText(m_font, sk.name, (unsigned)nameFont);
+        nameText.setFillColor(tc);
+        nameText.setStyle(sf::Text::Bold);
+        nameText.setPosition({descX + w * 0.015f, descY + descH * 0.05f});
+        m_window.draw(nameText);
+
+        auto st = sk.type;
+        std::wstring typeStr = skillTypeLabel(st);
+        sf::Text typeTag(m_font, typeStr, (unsigned)(h * 0.018f));
+        typeTag.setFillColor(tc);
+        auto ttsz = nameText.getGlobalBounds().size;
+        typeTag.setPosition({descX + w * 0.015f + ttsz.x + w * 0.015f,
+                             descY + descH * 0.08f});
+        m_window.draw(typeTag);
+
+        sf::Text descText(m_font, sk.desc, (unsigned)(h * 0.021f));
+        descText.setFillColor(sf::Color(220, 220, 220));
+        descText.setPosition({descX + w * 0.015f, descY + descH * 0.50f});
+        m_window.draw(descText);
     }
 
     // ---- 开始战斗按钮 ----
@@ -1371,8 +1433,8 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     // ---- 幽灵卡 (拖拽跟随鼠标) ----
     if (isDragging && dragSkillId >= 0 && dragSkillId < SKILL_COUNT) {
         auto& sk = allSkills[dragSkillId];
-        float ghostW = L.cardW * 1.05f;
-        float ghostH = L.cardH * 1.05f;
+        float ghostW = poolCardW * 1.05f;
+        float ghostH = poolCardH * 1.05f;
         float gx = mousePos.x - ghostW / 2.f;
         float gy = mousePos.y - ghostH / 2.f;
         float gcut = 10.f;
@@ -2242,9 +2304,9 @@ void Renderer::renderGame(const GameState& state,
         m_wasSchedulePlay = true;
     } else {
         m_scheduleAnimTimer = 0.f;
-        // 刚退出调度 → 启动飞行动画 (仅掌控者 charId==2)
+        // 刚退出调度 → 标记待飞 (卡牌动画结束后再启动立绘飞行)
         if (m_wasSchedulePlay && charId == 2) {
-            m_scheduleFlyProgress = 0.f;
+            m_pendingScheduleFly = true;
         }
         m_wasSchedulePlay = false;
     }
@@ -2333,6 +2395,46 @@ void Renderer::renderGame(const GameState& state,
     m_handCardYOffsets.resize(pn, 0.0f);
 
     int hoveredIdx = -1;
+
+    // 检测新卡牌加入 (炸弹生成 / 调度换牌) → 启动飞入动画
+    std::vector<int> curImgIndices; curImgIndices.reserve(pn);
+    for (const auto& c : ph) curImgIndices.push_back(c.imageIndex);
+    bool justExitedSchedule = (m_prevPhase == GameState::Phase::SchedulePlay
+                               && state.phase() != GameState::Phase::SchedulePlay);
+    if ((state.bombGenFlash() > 0 || justExitedSchedule)
+        && !m_bombDealActive && !m_dealActive
+        && !m_prevHandImgIndices.empty()) {
+        // 找出新增的imageIndex (简单差分: 统计每个idx的新增数量)
+        std::unordered_map<int, int> prevCnt, curCnt;
+        for (int idx : m_prevHandImgIndices) prevCnt[idx]++;
+        for (int idx : curImgIndices) curCnt[idx]++;
+        std::vector<int> newImgIndices;
+        for (auto& [imgIdx, cnt] : curCnt) {
+            int diff = cnt - prevCnt[imgIdx];
+            for (int k = 0; k < diff; ++k) newImgIndices.push_back(imgIdx);
+        }
+        // 在手牌中找到这些imageIndex对应的位置
+        std::vector<int> bombIndices;
+        for (int i = 0; i < pn && bombIndices.size() < newImgIndices.size(); ++i) {
+            for (int j = 0; j < (int)newImgIndices.size(); ++j) {
+                if (newImgIndices[j] >= 0 && ph[i].imageIndex == newImgIndices[j]) {
+                    bombIndices.push_back(i);
+                    newImgIndices[j] = -1; // 标记已找到
+                    break;
+                }
+            }
+        }
+        if (!bombIndices.empty())
+            startBombDealAnimation(bombIndices);
+    }
+    m_prevHandImgIndices = std::move(curImgIndices);
+
+    // 调度结束后: 若没有卡牌动画则立即启动立绘飞行, 否则等卡牌动画结束
+    if (m_pendingScheduleFly && !m_bombDealActive) {
+        m_scheduleFlyProgress = 0.f;
+        m_pendingScheduleFly = false;
+    }
+    m_prevPhase = state.phase();
 
     if (m_dealActive) {
         // --- 发牌动画模式: 底部中心旋转 + 扇形展开 + 飞入 ---
@@ -2435,6 +2537,15 @@ void Renderer::renderGame(const GameState& state,
             float bcx = pos.x + dispW / 2.0f + liftX;
             float bcy = pos.y + dispH + arcSink - liftY;
 
+            // 炸弹生成动画期间, 新牌由动画层绘制 (避免双绘)
+            if (m_bombDealActive) {
+                bool isBombCard = false;
+                for (int bi : m_bombCardIndices) {
+                    if (i == bi) { isBombCard = true; break; }
+                }
+                if (isBombCard) continue;
+            }
+
             auto it = m_faceTextures.find(ph[i].imageIndex);
             const sf::Texture* tex = (it != m_faceTextures.end()) ? &it->second : &m_backTexture;
 
@@ -2480,6 +2591,57 @@ void Renderer::renderGame(const GameState& state,
     if (hoveredIdx != m_prevHandHoveredIdx && hoveredIdx >= 0)
         playHoverTick();
     m_prevHandHoveredIdx = hoveredIdx;
+
+    // --- 炸弹生成动画: 新牌飞入 (覆盖在正常手牌之上) ---
+    if (m_bombDealActive && !m_dealActive) {
+        float middle = (pn - 1) / 2.0f;
+        float maxAngleDeg = 0.0f;
+        float arcCurve = 0.0f;
+        for (int j = 0; j < (int)m_bombDealAnim.size(); ++j) {
+            if (!m_bombDealAnim[j].started) continue;
+            int i = m_bombCardIndices[j];
+            if (i < 0 || i >= pn) continue;
+
+            auto pos = handCardPos(i, pn, phY, winSize);
+            float t = m_bombDealAnim[j].progress;
+            float eased = easeOutCubic(t);
+
+            float norm = (pn > 1) ? (float)(i - middle) / middle : 0.0f;
+            float fanRot = maxAngleDeg * std::sin(norm * 3.14159265f / 2.0f) * eased;
+            float dist = std::abs(i - middle);
+            float arcSink = dist * dist * arcCurve * eased;
+
+            float curScale = hs * (DEAL_INIT_SCL + (1.0f - DEAL_INIT_SCL) * eased);
+            std::uint8_t curAlpha = (std::uint8_t)(255 * eased);
+
+            // 从屏幕右侧飞入 (起始位置在目标右侧 +800px)
+            float startXOff = 800.f * (1.f - eased);
+            float bcx = pos.x + dispW / 2.0f + startXOff;
+            float animYOff = arcSink - DEAL_INIT_YOFF * (1.f - eased);
+            float bcy = pos.y + dispH + arcSink - animYOff;
+
+            auto it = m_faceTextures.find(ph[i].imageIndex);
+            const sf::Texture* tex = (it != m_faceTextures.end()) ? &it->second : &m_backTexture;
+
+            sf::Sprite sprite(*tex);
+            sprite.setOrigin({CARD_W / 2.0f, CARD_H});
+            sprite.setScale({curScale, curScale});
+            sprite.setPosition({bcx, bcy});
+            sprite.setRotation(sf::degrees(fanRot));
+            sprite.setColor(sf::Color(255, 255, 255, curAlpha));
+            m_window.draw(sprite);
+
+            // 粉色发光外框
+            sf::Sprite glow(*tex);
+            glow.setOrigin({CARD_W / 2.0f, CARD_H});
+            glow.setScale({curScale * 1.04f, curScale * 1.04f});
+            glow.setPosition({bcx, bcy});
+            glow.setRotation(sf::degrees(fanRot));
+            glow.setColor(sf::Color(STREET_PINK.r, STREET_PINK.g, STREET_PINK.b,
+                          (std::uint8_t)(100 * eased)));
+            m_window.draw(glow);
+        }
+    }
 
     m_playerLabel->setString(L"我方单位");
     m_playerLabel->setPosition({w * 0.012f, phY - h * 0.033f});
