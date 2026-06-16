@@ -355,8 +355,12 @@ int main()
                         // ---- 拖拽完成 ----
                         if (dragSourceType == 1) {
                             // 从卡池拖出 → 放入槽位
-                            if (slHit >= 0)
+                            if (slHit >= 0) {
+                                int oldSkill = run.equippedSkills()[slHit];
+                                if (oldSkill >= 0 && oldSkill != dragSkillId)
+                                    run.unequipSlot(slHit);
                                 run.equipSkill(slHit, dragSkillId);
+                            }
                         } else if (dragSourceType == 2) {
                             // 从槽位拖出
                             if (slHit >= 0 && slHit != dragSourceIndex) {

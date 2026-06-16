@@ -126,6 +126,7 @@ private:
     sf::Texture m_gameBgTexture;
     sf::Texture m_charTextures[CHAR_COUNT];        // 角色选择立绘 (char0/1/2.png)
     sf::Texture m_battleCharTextures[CHAR_COUNT]; // 对战立绘 (char_0/1/_2.png)
+    sf::Texture m_skillTextures[SKILL_COUNT];     // 技能卡牌图片 (skill00/01/02.png)
     sf::Music   m_bgMusic;
     sf::SoundBuffer m_hoverSndBuf;
     std::unique_ptr<sf::Sound> m_hoverSnd;

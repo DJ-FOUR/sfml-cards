@@ -354,6 +354,22 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
         m_charTextures[i].setSmooth(true);
     }
 
+    // 技能卡牌图片 (skill00/01/03.png)
+    {
+        const char* skillFiles[SKILL_COUNT] = {
+            "images/character-card/skill00.png",
+            "images/character-card/skill01.png",
+            "images/character-card/skill03.png",
+        };
+        for (int i = 0; i < SKILL_COUNT; ++i) {
+            if (!m_skillTextures[i].loadFromFile(skillFiles[i])) {
+                std::fprintf(stderr, "Failed to load skill texture: %s\n", skillFiles[i]);
+                return false;
+            }
+            m_skillTextures[i].setSmooth(true);
+        }
+    }
+
     // 对战立绘 (char_0/1/_2.png)
     for (int i = 0; i < CHAR_COUNT; ++i) {
         std::snprintf(buf, sizeof(buf), "images/character-card/char_%d.png", i);
@@ -790,100 +806,56 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
 {
     (void)winSize;
     auto& rt = target ? *target : m_window;
-    auto& skills = getAllSkills();
-    float cut = 10.f;
 
     if (skillId < 0 || skillId >= SKILL_COUNT) {
-        // 空槽位（切角矩形）
-        drawBeveledRect(rt, x, y, w, h, 6.f,
-                        slotEmptyColor, BORDER_NORMAL, 1.f);
+        drawBeveledRect(rt, x, y, w, h, 6.f, slotEmptyColor, BORDER_NORMAL, 1.f);
         return;
     }
 
-    auto& sk = skills[skillId];
-    sf::Color typeColor = skillTypeStreetColor(sk.type);
+    auto& sk = getAllSkills()[skillId];
 
-    // 底色（切角矩形）— 根据技能类型使用街头潮流色
-    sf::Color fill = owned ? skillCardOwned
-                   : (hover ? sf::Color(typeColor.r/5, typeColor.g/5, typeColor.b/5) : STREET_BLACK);
-    sf::Color outline = hover ? typeColor : OUTLINE_BLACK;
-    drawBeveledRect(rt, x, y, w, h, cut, fill, outline, hover ? 4.f : 3.f);
-
-    // 顶部色带 — 跟随技能类型色
-    sf::RectangleShape topBar({w - cut * 2, h * 0.04f});
-    topBar.setPosition({x + cut, y + 2.f});
-    topBar.setFillColor(hover ? typeColor : sf::Color(26, 26, 26));
-    rt.draw(topBar);
-
-    // 已拥有角标 — 荧光粉底黑字粗描边
-    if (owned) {
-        sf::RectangleShape ownedTag({w * 0.28f, h * 0.045f});
-        ownedTag.setPosition({x + 2.f, y + 4.f});
-        ownedTag.setFillColor(STREET_PINK);
-        ownedTag.setOutlineColor(OUTLINE_BLACK);
-        ownedTag.setOutlineThickness(2.f);
-        rt.draw(ownedTag);
-        sf::Text ownedText(m_font, L"OWNED", (unsigned)(h * 0.035f));
-        ownedText.setFillColor(OUTLINE_BLACK);
-        ownedText.setStyle(sf::Text::Bold);
-        auto osz = ownedText.getGlobalBounds().size;
-        ownedText.setPosition({x + (w * 0.28f - osz.x) / 2.f, y + 4.f + (h * 0.045f - osz.y) / 2.f - 2.f});
-        rt.draw(ownedText);
+    // 全幅技能图片作为卡牌（始终不透明）
+    {
+        auto& tex = m_skillTextures[skillId];
+        sf::Sprite skSprite(tex);
+        skSprite.setScale({w / (float)tex.getSize().x, h / (float)tex.getSize().y});
+        skSprite.setPosition({x, y});
+        if (owned) skSprite.setColor(sf::Color(180, 180, 180));
+        rt.draw(skSprite);
     }
 
-    // [IMG-SKILL-S01~S08] 技能图标占位（线框八角形 + 内部波点）
-    float iconSize = w * 0.30f;
-    float iconX = x + (w - iconSize) / 2.f;
-    float iconY = y + h * 0.08f;
-    drawOctagonIcon(rt, iconX, iconY, iconSize, sf::Color(10, 10, 10), OUTLINE_BLACK, 3.f);
-    // 内部波点纹理
-    float dotSize = iconSize * 0.06f;
-    float spacing = dotSize * 2.5f;
-    for (float dy = iconY + spacing; dy < iconY + iconSize - spacing; dy += spacing) {
-        for (float dx = iconX + spacing; dx < iconX + iconSize - spacing; dx += spacing) {
-            sf::CircleShape dot(dotSize);
-            dot.setPosition({dx, dy});
-            dot.setFillColor(sf::Color(typeColor.r/4, typeColor.g/4, typeColor.b/4));
-            rt.draw(dot);
-        }
+    // 黑色描边（常驻）
+    {
+        sf::RectangleShape border({w, h});
+        border.setPosition({x, y});
+        border.setFillColor(sf::Color::Transparent);
+        border.setOutlineColor(OUTLINE_BLACK);
+        border.setOutlineThickness(3.f);
+        rt.draw(border);
+    }
+    // 悬停时叠加青蓝描边
+    if (hover) {
+        sf::RectangleShape border({w, h});
+        border.setPosition({x, y});
+        border.setFillColor(sf::Color::Transparent);
+        border.setOutlineColor(STREET_CYAN);
+        border.setOutlineThickness(2.f);
+        rt.draw(border);
     }
 
-    sf::Text iconText(m_font, "S" + std::to_string(skillId + 1),
-                      (unsigned)(iconSize * 0.38f));
-    iconText.setFillColor(typeColor);
-    auto isz = iconText.getGlobalBounds().size;
-    iconText.setPosition({x + (w - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
-    rt.draw(iconText);
-
-    // 技能名 — 居中于图标和底部信息栏之间（粗黑描底）
-    float iconBot = iconY + iconSize;
-    float infoTop = y + h - h * 0.065f;
-    float nameF = h * 0.10f;
+    // 技能名称（底部居中）
+    float nameF = h * 0.09f;
     sf::Text nameShadow(m_font, sk.name, (unsigned)nameF);
     nameShadow.setFillColor(OUTLINE_BLACK);
     nameShadow.setStyle(sf::Text::Bold);
     auto nsz = nameShadow.getGlobalBounds().size;
-    nameShadow.setPosition({x + (w - nsz.x) / 2.f + 2.f, (iconBot + infoTop - nsz.y) / 2.f + 2.f});
+    nameShadow.setPosition({x + (w - nsz.x) / 2.f + 2.f, y + h * 0.88f + 2.f});
     rt.draw(nameShadow);
-
     sf::Text name(m_font, sk.name, (unsigned)nameF);
     name.setFillColor(STREET_WHITE);
     name.setStyle(sf::Text::Bold);
-    name.setPosition({x + (w - nsz.x) / 2.f, (iconBot + infoTop - nsz.y) / 2.f});
+    name.setPosition({x + (w - nsz.x) / 2.f, y + h * 0.88f});
     rt.draw(name);
-
-    // 底部黑条区域
-    sf::RectangleShape infoBar({w - cut * 2, h * 0.055f});
-    infoBar.setPosition({x + cut, y + h - h * 0.065f});
-    infoBar.setFillColor(sf::Color(5, 5, 5));
-    rt.draw(infoBar);
-
-    std::wstring typeStr = skillTypeLabel(sk.type);
-    sf::Text costText(m_font, typeStr, (unsigned)(h * 0.032f));
-    costText.setFillColor(typeColor);
-    auto csz = costText.getGlobalBounds().size;
-    costText.setPosition({x + (w - csz.x) / 2.f, y + h - h * 0.058f});
-    rt.draw(costText);
 }
 
 // ====== 主菜单 ======
@@ -1176,8 +1148,8 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
 
     auto& allSkills = getAllSkills();
 
-    // ---- 左侧: 已获得技能卡池 (2列网格, 无背景框) ----
-    float poolCardH = h * 0.16f;
+    // ---- 左侧: 已获得技能卡池 (2列网格, 与装备槽同尺寸) ----
+    float poolCardH = h * 0.20f;
     float poolCardW = poolCardH * CARD_W / CARD_H;
     float poolX2 = w * 0.06f;
     float poolY = h * 0.14f;
@@ -1265,41 +1237,30 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
         // 被拖出或飞回卡池时显示空槽
         int drawSid = (isBeingDraggedFrom || isFlyingFromSlot) ? -1 : sid;
 
-        sf::Color sfill = slotEmptyColor;
-        sf::Color soutline = OUTLINE_BLACK;
         if (drawSid >= 0) {
             auto& sk = allSkills[drawSid];
-            sf::Color tc = skillTypeStreetColor(sk.type);
-            sfill = sf::Color(tc.r/6, tc.g/6, tc.b/6);
-            soutline = highlight ? tc : OUTLINE_BLACK;
-        } else if (highlight) {
-            sfill = sf::Color(26, 26, 10);
-            soutline = STREET_YELLOW;
-        }
-        drawBeveledRect(m_window, sx, baseY, slotW, slotH, slotCut,
-                        sfill, soutline, highlight ? 4.f : 3.f);
-
-        if (drawSid >= 0) {
-            auto& sk = allSkills[drawSid];
-            sf::Color tc = skillTypeStreetColor(sk.type);
-            sf::RectangleShape sbar({slotW - slotCut * 2, 6.f});
-            sbar.setPosition({sx + slotCut, baseY + 2.f});
-            sbar.setFillColor(tc);
-            m_window.draw(sbar);
-
+            // 全幅技能图片
+            {
+                auto& tex = m_skillTextures[drawSid];
+                sf::Sprite skSprite(tex);
+                skSprite.setScale({slotW / (float)tex.getSize().x, slotH / (float)tex.getSize().y});
+                skSprite.setPosition({sx, baseY});
+                m_window.draw(skSprite);
+            }
+            // 黑色描边
+            sf::RectangleShape border({slotW, slotH});
+            border.setPosition({sx, baseY});
+            border.setFillColor(sf::Color::Transparent);
+            border.setOutlineColor(OUTLINE_BLACK);
+            border.setOutlineThickness(3.f);
+            m_window.draw(border);
+            // 技能名
             sf::Text slotText(m_font, sk.name, (unsigned)(slotH * 0.15f));
             slotText.setFillColor(STREET_WHITE);
             slotText.setStyle(sf::Text::Bold);
             auto tsz = slotText.getGlobalBounds().size;
-            slotText.setPosition({sx + (slotW - tsz.x) / 2.f, baseY + slotH * 0.22f});
+            slotText.setPosition({sx + (slotW - tsz.x) / 2.f, baseY + slotH * 0.80f});
             m_window.draw(slotText);
-
-            std::wstring typeStr = skillTypeLabel(sk.type);
-            sf::Text cost(m_font, typeStr, (unsigned)(slotH * 0.12f));
-            cost.setFillColor(tc);
-            auto csz = cost.getGlobalBounds().size;
-            cost.setPosition({sx + (slotW - csz.x) / 2.f, baseY + slotH * 0.60f});
-            m_window.draw(cost);
         } else {
             float cx = sx + slotW / 2.f;
             float cy = baseY + slotH / 2.f;
@@ -1432,48 +1393,27 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
 
     // ---- 幽灵卡 (拖拽跟随鼠标) ----
     if (isDragging && dragSkillId >= 0 && dragSkillId < SKILL_COUNT) {
-        auto& sk = allSkills[dragSkillId];
         float ghostW = poolCardW * 1.05f;
         float ghostH = poolCardH * 1.05f;
         float gx = mousePos.x - ghostW / 2.f;
         float gy = mousePos.y - ghostH / 2.f;
-        float gcut = 10.f;
 
-        // 半透明卡体
-        drawBeveledRect(m_window, gx, gy, ghostW, ghostH, gcut,
-                        sf::Color(15, 20, 10, 210),
-                        sf::Color(204, 255, 0, 180), 2.f);
-
-        // 顶部色带
-        sf::RectangleShape gbar({ghostW - gcut * 2, ghostH * 0.04f});
-        gbar.setPosition({gx + gcut, gy + 2.f});
-        gbar.setFillColor(sf::Color(204, 255, 0, 180));
-        m_window.draw(gbar);
-
-        // 图标
-        float iconSize = ghostW * 0.30f;
-        float iconX = gx + (ghostW - iconSize) / 2.f;
-        float iconY = gy + ghostH * 0.08f;
-        drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10, 210), sf::Color(204, 255, 0, 180));
-
-        sf::Text gIcon(m_font, L"S" + std::to_wstring(dragSkillId + 1),
-                       (unsigned)(iconSize * 0.38f));
-        gIcon.setFillColor(sf::Color(204, 255, 0, 200));
-        auto isz = gIcon.getGlobalBounds().size;
-        gIcon.setPosition({gx + (ghostW - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
-        m_window.draw(gIcon);
-
-        // 技能名
-        float nameF = ghostH * 0.10f;
-        sf::Text gName(m_font, sk.name, (unsigned)nameF);
-        gName.setFillColor(sf::Color(255, 255, 255, 200));
-        gName.setStyle(sf::Text::Bold);
-        auto nsz = gName.getGlobalBounds().size;
-        float iconBot = iconY + iconSize;
-        float gInfoTop = gy + ghostH - ghostH * 0.065f;
-        gName.setPosition({gx + (ghostW - nsz.x) / 2.f,
-                           (iconBot + gInfoTop - nsz.y) / 2.f});
-        m_window.draw(gName);
+        // 全幅技能图片 (半透明)
+        {
+            auto& tex = m_skillTextures[dragSkillId];
+            sf::Sprite gSprite(tex);
+            gSprite.setScale({ghostW / (float)tex.getSize().x, ghostH / (float)tex.getSize().y});
+            gSprite.setColor(sf::Color(255, 255, 255, 170));
+            gSprite.setPosition({gx, gy});
+            m_window.draw(gSprite);
+        }
+        // 黑色描边
+        sf::RectangleShape gBorder({ghostW, ghostH});
+        gBorder.setPosition({gx, gy});
+        gBorder.setFillColor(sf::Color::Transparent);
+        gBorder.setOutlineColor(OUTLINE_BLACK);
+        gBorder.setOutlineThickness(3.f);
+        m_window.draw(gBorder);
     }
 
     // 卡牌悬停音效 — 卡池
@@ -2072,41 +2012,23 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         int sid = playerSkillIds[i];
         float skCut = 3.f;
 
-        bool slotGlow = (glowMask >> i) & 1;
-        sf::Color slotColor = slotEmptyColor;
-        sf::Color topBand = BORDER_NORMAL;
-        sf::Color outlineCol = OUTLINE_BLACK;
         if (sid >= 0) {
             auto& sk = allSkills[sid];
-            sf::Color tc = skillTypeStreetColor(sk.type);
-            slotColor = sf::Color(tc.r/6, tc.g/6, tc.b/6);
-            topBand = tc;
-            outlineCol = slotGlow ? STREET_YELLOW : OUTLINE_BLACK;
-        }
-        drawBeveledRect(m_window, sx, sy, skW, skH, skCut,
-                        slotColor, outlineCol, slotGlow ? 4.f : 3.f);
-
-        if (sid >= 0) {
-            auto& sk = allSkills[sid];
-            // 顶部色带
-            sf::RectangleShape tbar({skW - skCut * 2, 6.f});
-            tbar.setPosition({sx + skCut, sy + 2.f});
-            tbar.setFillColor(topBand);
-            m_window.draw(tbar);
-
-            // 线框八角形图标
-            float iconSize = skW * 0.28f;
-            float iconX = sx + (skW - iconSize) / 2.f;
-            float iconY = sy + skH * 0.10f;
-            drawOctagonIcon(m_window, iconX, iconY, iconSize, sf::Color(10, 10, 10), OUTLINE_BLACK, 2.f);
-
-            sf::Text iconText(m_font, "S" + std::to_string(sid + 1),
-                              (unsigned)(iconSize * 0.38f));
-            iconText.setFillColor(topBand);
-            auto isz = iconText.getGlobalBounds().size;
-            iconText.setPosition({sx + (skW - isz.x) / 2.f, iconY + (iconSize - isz.y) / 2.f});
-            m_window.draw(iconText);
-
+            // 全幅技能图片
+            {
+                auto& tex = m_skillTextures[sid];
+                sf::Sprite skSprite(tex);
+                skSprite.setScale({skW / (float)tex.getSize().x, skH / (float)tex.getSize().y});
+                skSprite.setPosition({sx, sy});
+                m_window.draw(skSprite);
+            }
+            // 黑色描边
+            sf::RectangleShape border({skW, skH});
+            border.setPosition({sx, sy});
+            border.setFillColor(sf::Color::Transparent);
+            border.setOutlineColor(OUTLINE_BLACK);
+            border.setOutlineThickness(3.f);
+            m_window.draw(border);
             // 技能名
             float nameF = skW * 0.22f;
             m_skillBtnTexts[i]->setString(sk.name);
@@ -2114,16 +2036,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             m_skillBtnTexts[i]->setFillColor(sf::Color::White);
             auto tsz = m_skillBtnTexts[i]->getGlobalBounds().size;
             m_skillBtnTexts[i]->setPosition({sx + (skW - tsz.x) / 2.f,
-                                              sy + skH * 0.48f});
+                                              sy + skH * 0.80f});
             m_window.draw(*m_skillBtnTexts[i]);
-
-            // 技能类型标签
-            std::wstring info = skillTypeLabel(sk.type);
-            sf::Text infoText(m_font, info, (unsigned)(skW * 0.20f));
-            infoText.setFillColor(topBand);
-            auto csz = infoText.getGlobalBounds().size;
-            infoText.setPosition({sx + (skW - csz.x) / 2.f, sy + skH * 0.78f});
-            m_window.draw(infoText);
         } else {
             // 空槽准星
             float cx = sx + skW / 2.f;

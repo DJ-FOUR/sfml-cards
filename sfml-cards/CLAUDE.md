@@ -45,7 +45,8 @@ Full architecture docs: [AGENTS.md](AGENTS.md) | Gameplay rules: [GAMEPLAY.md](G
 
 ### Screen state machine (`main.cpp`)
 
-`Screen` enum: `MainMenu → CharacterSelect → WildcardSelect(仅谋略家) → Reward → Transition → Game → Reward → GameOver`. `Settings` 可从 Game / Transition / Reward 界面打开（右上角齿轮按钮），关闭后回到原界面。
+`Screen` enum: `MainMenu → CharacterSelect → WildcardSelect(仅谋略家) → Reward → Transition → Game → Reward → GameOver`.
+`Settings` 可从所有界面（除主菜单和设置自身）通过左上角齿轮按钮打开，关闭后回到原界面。`previousScreen` 记录来源界面。
 
 `Game = GameState{}` 在所有返回主菜单路径上调用，完全重置游戏状态。`AIMemory::clear()` 同步清空。
 
@@ -67,7 +68,7 @@ main.cpp
 
 `Phase { PlayerTurn, ComputerTurn, SchedulePlay, MomentumPlay, PlayerWins, ComputerWins }`
 
-- **SchedulePlay**: 掌控者「调度」— 选择至多 3 张手牌弃掉换牌（首回合可用，之后冷却 2 回合）
+- **SchedulePlay**: 掌控者「调度」— 选择至多 3 张手牌弃掉换牌（开局可用，之后冷却 2 回合）。屏幕上方中央显示掌控者立绘，完成调度后立绘飞向右下角
 - **MomentumPlay**: 连击之势触发（玩家或敌人连续 2 回合不出牌）— 选择 1 张牌免费打出
 
 ### 手牌分类管道
@@ -86,6 +87,17 @@ main.cpp
 ### 保底炸弹（炸弹收藏家）
 
 `dealCards()` 为炸弹收藏家确保手牌中至少有 1 个炸弹（4 张同点数）。发牌后若手牌无炸弹，自动从手牌中移除点数最少的牌，从抽牌堆换入 4 张同点数牌（不足时合成）。
+
+### 炸弹印记（炸弹收藏家）
+
+`recordBombPlayed()` 在玩家或敌人打出炸弹/火箭时调用，`m_bombMarks` 累积。满 3 印记时自动从抽牌堆生成随机炸弹（4张同点数，不足时合成虚拟牌）加入手牌，印记归零。生成时触发 `m_bombGenFlash = 120` 帧红色斜条纹闪光。
+
+### 掌控者「调度」
+
+`SchedulePlay` 阶段：`m_scheduleAvailable = true` 时自动触发（开局可用，冷却 2 回合）。
+- `scheduleDiscard()`: 选 1~3 张手牌弃掉，从抽牌堆抽等量牌
+- `scheduleSkip()`: 不弃牌直接跳过
+- 冷却在每回合开始时递减（`m_scheduleCooldown--`）
 
 ### 镜像机制
 
@@ -117,17 +129,17 @@ main.cpp
 
 ### 游戏 UI 布局
 
-- **敌人手牌**：顶部 (`computerHandY = h*0.05`)
+- **敌人手牌**：顶部 (`computerHandY = h*0.05`)，牌背显示 `card00.png`
 - **敌人技能槽**：右上角，暗红警示风格，3 个小卡牌比例矩形
-- **设置按钮**：右上角齿轮图标，hover 变青，点击打开设置弹窗
+- **设置按钮**：左上角齿轮图标（所有界面，除主菜单），hover 变青，点击打开设置弹窗
 - **出牌区**：中央（敌人在上，玩家在下）
-- **出牌/不出按钮**：手牌上方居中 (`h*0.56`)，PlayerTurn 和 MomentumPlay 时可见
+- **出牌/不出按钮**：手牌上方居中 (`h*0.56`)，PlayerTurn、MomentumPlay、SchedulePlay 时可见
 - **玩家手牌**：底部 (`handCardY = h*0.66`)，竖直排列，扇形排布
 - **玩家技能槽**：左下角 (`w*0.03`, `h*0.83`)，3 个卡牌比例面板，标签"装备槽"
-- **炸弹印记**：右下角（星标 + "印记 N/3"），仅炸弹收藏家可见
-- **返回按钮**：左上角切角风格
-- **状态栏**：底部居中，按 Phase 变色（玩家回合=青，敌方=粉，胜利=黄）
-- **设置弹窗**：半透明遮罩 + 居中切角面板，含音乐/音效滑块 + 返回主界面/关闭按钮
+- **炸弹印记**：右下角（黑底 + 星标 + "印记 N/3" + 红色斜条纹闪光），仅炸弹收藏家可见
+- **角色立绘**：对战界面右下角（白底青蓝描边框），显示当前角色 `char_0/1/_2.png`
+- **状态栏**：底部居中，按 Phase 变色（玩家回合=青，敌方=粉，胜利=黄，调度=青）
+- **设置弹窗**：半透明遮罩 + 居中切角面板，含音乐/音效滑块 + "放弃本轮"/关闭按钮
 
 ### 动画效果
 
@@ -137,14 +149,21 @@ main.cpp
 | **卡牌飞入** (飞牌动画) | 炸弹生成 / 调度换牌时，新牌从屏幕右侧飞入，粉色发光外框 |
 | **悬停动效** | `HoverAnimState` + lerp 平滑：手牌上浮、按钮 108% 缩放、角色/技能牌上浮+缩放 |
 | **连击之势** | 暗色遮罩 + 中央技能卡牌缩放动画 (1.5x→0.3x) + 提示文字淡入 |
-| **调度立绘飞行** | 掌控者角色卡牌飞向技能槽（在卡牌飞入完成后执行） |
-| **炸弹闪光** | 红色斜条纹闪光 2 秒 |
+| **调度入场** | 掌控者立绘从 0.3x→1.0x 缩放入场 (0.4s)，居屏幕上方中央 |
+| **调度飞行** | 调度完成后，掌控者立绘从上方中央 smoothstep 飞向右下角 (~0.4s)，立绘和白框同步缩放 |
+| **炸弹闪光** | 印记集满生成炸弹时，印记区红色 45° 斜条纹闪烁 2 秒，alpha 衰减 |
+
+### 角色选择 UI
+
+- 三张角色卡牌使用 `char0/1/2.png`（500×857）全幅显示，白底黑字角色名在图片下方
+- 悬停时上浮 + 1.10x 缩放，底部弹出白底黑边说明面板（被动技能描述）
+- 齿轮按钮左上角，可打开设置
 
 ### 音频
 
-- **背景音乐**：`resources/music/first.mp3`，`sf::Music`，循环播放，音量上限 50%。备选文件 `Start.mp3`、`second.mp3` 未使用
+- **背景音乐**：`resources/music/first.mp3`，`sf::Music`，循环播放，默认音量 40%。备选文件 `Start.mp3`、`second.mp3` 未使用
 - **悬停音效**：`resources/sound/touch.mp3`，`sf::Sound`，卡牌 hover 进入时播放
-- 音量通过设置弹窗滑块调节，调用 `Renderer::setMusicVolume()` / `setSoundVolume()`，音乐音量上限 50%
+- 音量通过设置弹窗滑块调节，调用 `Renderer::setMusicVolume()` / `setSoundVolume()`
 
 ## Code conventions
 
@@ -160,16 +179,16 @@ main.cpp
 
 | ID | Name | Passive | Effect |
 |----|------|---------|--------|
-| 0 | 炸弹收藏家 | 收藏 | +1 手牌 (16张)；炸弹印记：每炸一次 +1 印记，3 印记生成 1 个炸弹 |
-| 1 | 谋略家 | 谋定 | 选择癞子点数 (3~2) |
-| 2 | 掌控者 | 调度 | +1 手牌 (16张)；每 2 回合可弃至多 3 张手牌换等量牌 |
+| 0 | 炸弹收藏家 | 收藏 | +1 手牌 (16张)；场上每炸一次 +1 印记，3 印记生成 1 个炸弹 |
+| 1 | 谋略家 | 谋定 | 开局选择癞子点数 (3~2)，该点数可替代任何缺失牌 |
+| 2 | 掌控者 | 调度 | +1 手牌 (16张)；开局/每 2 回合可弃至多 3 张手牌换等量牌 |
 
 ## Skills (SKILL_COUNT=3)
 
 | ID | Name | Effect |
 |----|------|--------|
 | 0 | 连击之势 | 敌人连续 2 回合不出牌时触发；选 1 张手牌免费打出 |
-| 1 | 顺子大师 | 顺子最低长度 4 张（原 5 张） |
+| 1 | 顺子大师 | 顺子最低长度-1（4 张即可出顺子） |
 | 2 | 王牌意志 | 你的小王只能被大王压制（炸弹无效） |
 
 全部 `SkillType::PASSIVE`。SkillDef: `{id, name, desc, type}`。SkillBuffs 携带 `straightExtended` 和 `jokerWill`。
@@ -183,16 +202,20 @@ main.cpp
 | `SKILL_COUNT` | 3 | skill.hpp |
 | `MAX_SKILL_SLOTS` | 3 | skill.hpp |
 | `CHAR_COUNT` | 3 | character.hpp |
+| `CHAR_RT_W × CHAR_RT_H` | 500×857 | renderer.hpp |
 | `DEFAULT_W × DEFAULT_H` | 1200×750 | renderer.hpp |
 | `CARD_W × CARD_H` | 105×150 | renderer.hpp |
 
 ## 卡牌尺寸速查
 
-| 位置 | 宽高比 | 默认尺寸 (1200×750) | 计算方式 |
+| 位置 | 宽高比 | 默认尺寸 (1200×750) | 纹理/计算方式 |
 |------|--------|---------------------|----------|
 | 手牌 / 通用卡牌 | 105:150 (7:10) | 105×150 (基准) | `CARD_W × CARD_H` 常量 |
+| 牌背 | 105:150 | 105×150 | `card00.png` (images/character-card/) |
 | 技能选择卡牌 | 7:10 | 221×315 | `h*0.42 × CARD_W/CARD_H` |
-| 角色选择卡牌 | 7:12 | 240×411 | `w*0.20 × 12/7` |
+| 角色选择卡牌 | 500:857 | ~264×452 | `char0/1/2.png` 全幅，`w*0.22` 宽 |
+| 对战角色立绘 | 512:1024 | ~188×375 | `char_0/1/_2.png`，`h*0.25` 高 |
+| 调度中央立绘 | 512:1024 | ~165×330 | `char_2.png`，`h*0.22` 高 + 入场缩放 |
 
 ## Testing
 
@@ -203,6 +226,6 @@ main.cpp
 | File | Purpose |
 |------|---------|
 | `src/main.cpp` | 入口、主循环、Screen 状态机、事件路由、所有状态变量 |
-| `src/renderer.cpp` | 全部绘制 + 点击检测（~3000 行，最大文件） |
-| `src/game_state.cpp` | 核心规则、AI、技能效果、回合流转 |
+| `src/renderer.cpp` | 全部绘制 + 点击检测（~2800 行，最大文件） |
+| `src/game_state.cpp` | 核心规则、AI、技能效果（含调度/印记）、回合流转 |
 | `CMakeLists.txt` | 构建配置，SFML 静态链接，MinGW 静态运行时 |
