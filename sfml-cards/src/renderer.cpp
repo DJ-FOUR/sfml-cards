@@ -38,6 +38,7 @@ constexpr sf::Color STREET_YELLOW (255, 200, 0);    // 橙黄
 constexpr sf::Color STREET_BLACK  (10, 10, 10);     // 极黑底
 constexpr sf::Color OUTLINE_BLACK (0, 0, 0);        // 纯黑描边
 constexpr sf::Color STREET_WHITE  (255, 255, 255);  // 纯白
+constexpr sf::Color BATTLE_BLUE   (50, 120, 255);   // 对战界面蓝色文字
 
 // 根据技能类型返回街头潮流色
 sf::Color skillTypeStreetColor(SkillType t) {
@@ -335,6 +336,12 @@ bool Renderer::initialize(const std::string& imageDir, const std::string& fontPa
         return false;
     }
     m_gameBgTexture.setSmooth(true);
+
+    if (!m_battleBgTexture.loadFromFile("images/character-card/背景.jpg")) {
+        std::fprintf(stderr, "Failed to load battle background\n");
+        return false;
+    }
+    m_battleBgTexture.setSmooth(true);
 
     // 背景音乐
     if (!m_bgMusic.openFromFile("resources/music/first.mp3")) {
@@ -1768,7 +1775,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             sf::Text prevText(m_font,
                 L"弃牌 " + std::to_wstring((int)selectedIndices.size()) + L" / 3 张",
                 (unsigned)(h * 0.024f));
-            prevText.setFillColor(sf::Color::Black);
+            prevText.setFillColor(BATTLE_BLUE);
             auto psz = prevText.getGlobalBounds().size;
             prevText.setPosition({(w - psz.x) / 2.f, h * 0.81f});
             m_window.draw(prevText);
@@ -1782,7 +1789,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         auto pattern = GameState::classifyHand(selCards, &state.playerBuffs());
 
         std::wstring preview;
-        sf::Color prevCol = sf::Color::Black;
+        sf::Color prevCol = BATTLE_BLUE;
         if (pattern) {
             int wildRank = state.playerBuffs().wildcardRank;
             int mainR = pattern->mainRank;
@@ -1996,15 +2003,11 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     float skStartX = w * 0.03f;
     float skY = h * 0.83f;
     float panelW = skW * 3 + skGap * 2 + 16.f;
-    float panelH = skH + 28.f;
+    float panelH = skH + 16.f;
 
-    // 整体切角面板（3px 纯黑描边）
-    drawBeveledRect(m_window, skStartX - 8.f, skY - 22.f, panelW, panelH, 6.f,
-                    sf::Color(10, 10, 10), OUTLINE_BLACK, 3.f);
-    sf::Text slotPanelLabel(m_font, L"装备槽", (unsigned)(h * 0.018f));
-    slotPanelLabel.setFillColor(STREET_CYAN);
-    slotPanelLabel.setPosition({skStartX - 4.f, skY - 20.f});
-    m_window.draw(slotPanelLabel);
+    // 整体切角面板（3px 青蓝描边）
+    drawBeveledRect(m_window, skStartX - 8.f, skY - 8.f, panelW, panelH, 6.f,
+                    sf::Color(10, 10, 10), STREET_CYAN, 3.f);
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         float sx = skStartX + i * (skW + skGap);
@@ -2026,14 +2029,14 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
             sf::RectangleShape border({skW, skH});
             border.setPosition({sx, sy});
             border.setFillColor(sf::Color::Transparent);
-            border.setOutlineColor(OUTLINE_BLACK);
+            border.setOutlineColor(STREET_CYAN);
             border.setOutlineThickness(3.f);
             m_window.draw(border);
             // 技能名
             float nameF = skW * 0.22f;
             m_skillBtnTexts[i]->setString(sk.name);
             m_skillBtnTexts[i]->setCharacterSize((unsigned)nameF);
-            m_skillBtnTexts[i]->setFillColor(sf::Color::White);
+            m_skillBtnTexts[i]->setFillColor(BATTLE_BLUE);
             auto tsz = m_skillBtnTexts[i]->getGlobalBounds().size;
             m_skillBtnTexts[i]->setPosition({sx + (skW - tsz.x) / 2.f,
                                               sy + skH * 0.80f});
@@ -2055,45 +2058,56 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         }
     }
 
-    // 敌人技能图标显示 (顶部, 卡牌比例) — 暗红警示风格
+    // 敌人技能槽 (右上角, 与玩家技能槽相同大小/布局) — 使用图片素材
     auto& enemySlots = state.enemySkillSlots();
-    float eskH = h * 0.065f;
-    float eskW = eskH * CARD_W / CARD_H;
-    float eskGap = w * 0.012f;
-    float totalEskW = MAX_SKILL_SLOTS * eskW + (MAX_SKILL_SLOTS - 1) * eskGap;
-    float eskX = w - totalEskW - w * 0.03f;
-    float eskY = h * 0.02f;
+    float eTotalW = skW * 3 + skGap * 2 + 16.f;
+    float eStartX = w - eTotalW + 8.f - w * 0.03f;
+    float eY = h * 0.02f;
+    float ePanelW = skW * 3 + skGap * 2 + 16.f;
+    float ePanelH = skH + 16.f;
+
+    drawBeveledRect(m_window, eStartX - 8.f, eY, ePanelW, ePanelH, 6.f,
+                    sf::Color(10, 10, 10), STREET_PINK, 3.f);
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         int esid = enemySlots[i];
-        float ex = eskX + i * (eskW + eskGap);
-        float ec = 2.f;
-
-        sf::Color efill = (esid >= 0) ? sf::Color(80, 20, 40)
-                          : sf::Color(17, 17, 17);
-        sf::Color eout = (esid >= 0) ? STREET_PINK : OUTLINE_BLACK;
-        drawBeveledRect(m_window, ex, eskY, eskW, eskH, ec, efill, eout, 3.f);
+        float ex = eStartX + i * (skW + skGap);
+        float ey = eY + 8.f;
 
         if (esid >= 0) {
-            auto& esk = allSkills[esid];
-            sf::Text et(m_font, esk.name, (unsigned)(eskW * 0.18f));
+            auto& tex = m_skillTextures[esid];
+            sf::Sprite skSprite(tex);
+            skSprite.setScale({skW / (float)tex.getSize().x, skH / (float)tex.getSize().y});
+            skSprite.setPosition({ex, ey});
+            m_window.draw(skSprite);
+
+            // 描边
+            sf::RectangleShape border({skW, skH});
+            border.setPosition({ex, ey});
+            border.setFillColor(sf::Color::Transparent);
+            border.setOutlineColor(STREET_PINK);
+            border.setOutlineThickness(3.f);
+            m_window.draw(border);
+
+            // 技能名
+            float nameF = skW * 0.22f;
+            sf::Text et(m_font, allSkills[esid].name, (unsigned)nameF);
             et.setFillColor(sf::Color(255, 180, 180));
             auto etsz = et.getGlobalBounds().size;
-            et.setPosition({ex + (eskW - etsz.x) / 2.f, eskY + eskH * 0.20f});
+            et.setPosition({ex + (skW - etsz.x) / 2.f, ey + skH * 0.80f});
             m_window.draw(et);
-
-            std::wstring typeStr = skillTypeLabel(esk.type);
-            sf::Text costText(m_font, typeStr, (unsigned)(eskW * 0.20f));
-            costText.setFillColor(sf::Color(200, 150, 150));
-            auto csz = costText.getGlobalBounds().size;
-            costText.setPosition({ex + (eskW - csz.x) / 2.f, eskY + eskH * 0.55f});
-            m_window.draw(costText);
         } else {
-            sf::Text empty(m_font, L"--", (unsigned)(eskW * 0.22f));
-            empty.setFillColor(TEXT_DISABLED);
-            auto esz = empty.getGlobalBounds().size;
-            empty.setPosition({ex + (eskW - esz.x) / 2.f, eskY + eskH * 0.35f});
-            m_window.draw(empty);
+            // 空槽准星
+            float cx = ex + skW / 2.f;
+            float cy = ey + skH / 2.f - 4.f;
+            sf::RectangleShape crossH({skW * 0.20f, 1.f});
+            crossH.setPosition({cx - skW * 0.10f, cy});
+            crossH.setFillColor(BORDER_NORMAL);
+            m_window.draw(crossH);
+            sf::RectangleShape crossV({1.f, skH * 0.18f});
+            crossV.setPosition({cx, cy - skH * 0.09f});
+            crossV.setFillColor(BORDER_NORMAL);
+            m_window.draw(crossV);
         }
     }
 
@@ -2181,7 +2195,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
 
             m_playBtnText->setString(L"出牌");
             m_playBtnText->setCharacterSize((unsigned)(fontSize * m_playBtnHoverScale));
-            m_playBtnText->setFillColor(canPlaySelected ? (playHover ? OUTLINE_BLACK : STREET_WHITE) : sf::Color(85, 85, 0));
+            m_playBtnText->setFillColor(canPlaySelected ? sf::Color::Black : sf::Color(85, 85, 0));
             auto plsz = m_playBtnText->getGlobalBounds().size;
             m_playBtnText->setPosition({px + (btnW - plsz.x) / 2.f, btnY + btnH * 0.22f});
             m_window.draw(*m_playBtnText);
@@ -2232,7 +2246,21 @@ void Renderer::renderGame(const GameState& state,
         }
     }
 
-    drawBackground(winSize, true);
+    // 对战专用背景
+    {
+        auto& bgTex = m_battleBgTexture;
+        if (bgTex.getSize().x > 0) {
+            sf::Sprite bgSprite(bgTex);
+            float bgScale = std::max(w / (float)bgTex.getSize().x,
+                                     h / (float)bgTex.getSize().y);
+            bgSprite.setScale({bgScale, bgScale});
+            bgSprite.setPosition({(w - bgTex.getSize().x * bgScale) / 2.f,
+                                  (h - bgTex.getSize().y * bgScale) / 2.f});
+            m_window.draw(bgSprite);
+        } else {
+            m_window.clear(sf::Color(10, 10, 10));
+        }
+    }
 
     // --- 电脑手牌 (牌背) ---
     auto& ch = state.computerHand();
@@ -2244,11 +2272,11 @@ void Renderer::renderGame(const GameState& state,
     }
     m_computerLabel->setString(L"敌方单位");
     m_computerLabel->setPosition({w * 0.012f, chY - h * 0.007f});
-    m_computerLabel->setFillColor(sf::Color::White);
+    m_computerLabel->setFillColor(BATTLE_BLUE);
     m_window.draw(*m_computerLabel);
     // 手牌数角标
     sf::Text cCount(m_font, std::to_wstring(cn), (unsigned)(h * 0.022f));
-    cCount.setFillColor(sf::Color::Black);
+    cCount.setFillColor(BATTLE_BLUE);
     cCount.setStyle(sf::Text::Bold);
     auto ccsz = cCount.getGlobalBounds().size;
     sf::RectangleShape cTag({ccsz.x + 12.f, ccsz.y + 6.f});
@@ -2260,11 +2288,6 @@ void Renderer::renderGame(const GameState& state,
 
     // --- 电脑出的牌 ---
     {
-        sf::Text epl(m_font, L"敌方出牌", (unsigned)(h * 0.018f));
-        epl.setFillColor(TEXT_DIM);
-        auto epsz = epl.getGlobalBounds().size;
-        epl.setPosition({(w - epsz.x) / 2.f, computerPlayedY(h) - h * 0.08f});
-        m_window.draw(epl);
         // 战场淡框
         sf::RectangleShape eBox({w * 0.56f, h * 0.14f});
         eBox.setPosition({(w - w * 0.56f) / 2.f, computerPlayedY(h) - h * 0.07f});
@@ -2275,14 +2298,6 @@ void Renderer::renderGame(const GameState& state,
     }
     drawPlayedCards(state.lastComputerPlay(), computerPlayedY(h), ps, winSize);
 
-    // --- 玩家出的牌 ---
-    {
-        sf::Text apl(m_font, L"我方出牌", (unsigned)(h * 0.018f));
-        apl.setFillColor(TEXT_DIM);
-        auto apsz = apl.getGlobalBounds().size;
-        apl.setPosition({(w - apsz.x) / 2.f, playerPlayedY(h) + h * 0.09f});
-        m_window.draw(apl);
-    }
     drawPlayedCards(state.lastPlayerPlay(), playerPlayedY(h), ps, winSize);
 
     // --- 连击之势/调度: 全局变暗 (手牌之前绘制，手牌保持亮度) ---
@@ -2559,11 +2574,11 @@ void Renderer::renderGame(const GameState& state,
 
     m_playerLabel->setString(L"我方单位");
     m_playerLabel->setPosition({w * 0.012f, phY - h * 0.033f});
-    m_playerLabel->setFillColor(sf::Color::White);
+    m_playerLabel->setFillColor(BATTLE_BLUE);
     m_window.draw(*m_playerLabel);
     // 手牌数角标
     sf::Text pCount(m_font, std::to_wstring(pn), (unsigned)(h * 0.022f));
-    pCount.setFillColor(sf::Color::Black);
+    pCount.setFillColor(BATTLE_BLUE);
     pCount.setStyle(sf::Text::Bold);
     auto pcsz = pCount.getGlobalBounds().size;
     sf::RectangleShape pTag({pcsz.x + 12.f, pcsz.y + 6.f});
@@ -2666,18 +2681,17 @@ void Renderer::renderGame(const GameState& state,
             boxY = dstBoxY;
         }
 
-        // 白底 + 蓝色描边
-        sf::RectangleShape bgBox({boxW, boxH});
-        bgBox.setPosition({boxX, boxY});
-        bgBox.setFillColor(sf::Color::White);
-        bgBox.setOutlineColor(STREET_CYAN);
-        bgBox.setOutlineThickness(3.f);
-        m_window.draw(bgBox);
-
-        // 立绘
+        // 立绘 (悬停上移 + 点击弹窗)
+        float chLiftTarget = 0.f;
+        {
+            sf::FloatRect chkRect({imgX, imgY}, {imgW, imgH});
+            if (chkRect.contains(mousePos))
+                chLiftTarget = h * 0.03f;
+        }
+        m_charPortraitLift = lerp(m_charPortraitLift, chLiftTarget, dt * 14.f);
         sf::Sprite charSprite(tex);
         charSprite.setScale({imgW / (float)texSz.x, imgH / (float)texSz.y});
-        charSprite.setPosition({imgX, imgY});
+        charSprite.setPosition({imgX, imgY - m_charPortraitLift});
         m_window.draw(charSprite);
 
         // 调度提示文字
@@ -2692,8 +2706,17 @@ void Renderer::renderGame(const GameState& state,
             hint.setPosition({(w - hsz.x) / 2.f, imgY + imgH + h * 0.015f});
             m_window.draw(hint);
         }
+
+        // 被动技能点击弹窗 (右下角固定态)
+        if (m_charTooltipOpen
+            && state.phase() != GameState::Phase::SchedulePlay
+            && m_scheduleFlyProgress < 0.f) {
+            sf::FloatRect chkRect({imgX, imgY}, {imgW, imgH});
+            auto& ch = getAllCharacters()[2];
+            drawCharTooltip(w, h, chkRect, ch.passiveName, ch.passiveDesc);
+        }
     } else if (charId >= 0 && charId < CHAR_COUNT) {
-        // 其他角色: 右下角立绘
+        // 其他角色: 右下角立绘 (悬停上移 + 点击弹窗)
         auto& tex = m_battleCharTextures[charId];
         auto texSz = tex.getSize();
         float imgH = h * 0.25f;
@@ -2702,18 +2725,70 @@ void Renderer::renderGame(const GameState& state,
         float boxH = h * 0.24f;
         float boxX = w - boxW - w * 0.02f;
         float boxY = h - boxH - h * 0.02f;
-        sf::RectangleShape bgBox({boxW, boxH});
-        bgBox.setPosition({boxX, boxY});
-        bgBox.setFillColor(sf::Color::White);
-        bgBox.setOutlineColor(STREET_CYAN);
-        bgBox.setOutlineThickness(3.f);
-        m_window.draw(bgBox);
+        float spriteX = boxX + (boxW - imgW) / 2.f;
+        float spriteY = boxY + (boxH - imgH) / 2.f;
+
+        float chLiftTarget = 0.f;
+        {
+            sf::FloatRect chkRect({spriteX, spriteY}, {imgW, imgH});
+            if (chkRect.contains(mousePos))
+                chLiftTarget = h * 0.03f;
+        }
+        m_charPortraitLift = lerp(m_charPortraitLift, chLiftTarget, dt * 14.f);
         sf::Sprite charSprite(tex);
         charSprite.setScale({imgW / (float)texSz.x, imgH / (float)texSz.y});
-        charSprite.setPosition({boxX + (boxW - imgW) / 2.f,
-                                boxY + (boxH - imgH) / 2.f});
+        charSprite.setPosition({spriteX, spriteY - m_charPortraitLift});
         m_window.draw(charSprite);
+
+        // 被动技能点击弹窗
+        if (m_charTooltipOpen) {
+            sf::FloatRect chkRect({spriteX, spriteY}, {imgW, imgH});
+            auto& ch = getAllCharacters()[charId];
+            drawCharTooltip(w, h, chkRect, ch.passiveName, ch.passiveDesc);
+        }
     }
+}
+
+// ====== 角色立绘悬停提示 ======
+
+void Renderer::drawCharTooltip(float w, float h, sf::FloatRect charRect,
+                               const std::wstring& passiveName, const std::wstring& passiveDesc)
+{
+    float tipW = w * 0.18f;
+    float tipH = h * 0.12f;
+    float tipX = charRect.position.x - tipW - 16.f;
+    float tipY = charRect.position.y + (charRect.size.y - tipH) / 2.f;
+
+    // 确保不超出左边界
+    if (tipX < 8.f) tipX = 8.f;
+
+    // 背景面板
+    drawBeveledRect(m_window, tipX, tipY, tipW, tipH, 6.f,
+                    sf::Color(10, 10, 10, 230), STREET_CYAN, 2.f);
+
+    // 被动技能名称
+    float nameSize = h * 0.022f;
+    sf::Text nameText(m_font, passiveName, (unsigned)nameSize);
+    nameText.setFillColor(STREET_YELLOW);
+    nameText.setStyle(sf::Text::Bold);
+    auto nsz = nameText.getGlobalBounds().size;
+    nameText.setPosition({tipX + (tipW - nsz.x) / 2.f, tipY + h * 0.012f});
+    m_window.draw(nameText);
+
+    // 描述文字 (自动换行)
+    float descSize = h * 0.017f;
+    sf::Text descText(m_font, passiveDesc, (unsigned)descSize);
+    descText.setFillColor(TEXT_DIM);
+    auto dsz = descText.getGlobalBounds().size;
+
+    // 若描述过长则缩小字号
+    if (dsz.x > tipW - 16.f) {
+        descText.setCharacterSize((unsigned)(descSize * 0.85f));
+        dsz = descText.getGlobalBounds().size;
+    }
+    descText.setPosition({tipX + (tipW - dsz.x) / 2.f,
+                          tipY + tipH * 0.38f});
+    m_window.draw(descText);
 }
 
 // ====== 设置弹窗 ======
@@ -3079,5 +3154,25 @@ int Renderer::hitTestDebugButton(const sf::Vector2f& worldPos, sf::Vector2u winS
 
     if (sf::FloatRect({w * 0.14f, dbgY}, {dbgW, dbgH}).contains(worldPos)) return 1; // 我赢
     if (sf::FloatRect({w * 0.20f, dbgY}, {dbgW, dbgH}).contains(worldPos)) return 2; // 我输
+    return 0;
+}
+
+int Renderer::hitTestCharPortrait(const sf::Vector2f& worldPos, sf::Vector2u winSize,
+                                  int charId, const GameState& state) const
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+
+    // 掌控者在调度/飞行期间不响应点击
+    if (charId == 2 && (state.phase() == GameState::Phase::SchedulePlay
+                        || m_scheduleFlyProgress >= 0.f))
+        return 0;
+
+    float imgH = h * 0.25f;
+    float boxW = h * 0.15f;
+    float boxH = h * 0.24f;
+    float boxX = w - boxW - w * 0.02f;
+    float boxY = h - boxH - h * 0.02f;
+    if (sf::FloatRect({boxX, boxY}, {boxW, boxH}).contains(worldPos)) return 1;
     return 0;
 }

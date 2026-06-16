@@ -94,6 +94,7 @@ int main()
         aiTriggered = false;
         aiClock.restart();
         renderer.resetSkillSlotAnims();
+        renderer.closeCharTooltip();
         for (auto& t : skillToggled) t = false;
         renderer.startDealAnimation((int)game.playerHand().size());
     };
@@ -428,10 +429,15 @@ int main()
 
                         int btnHit = renderer.hitTestGameButton(pos3, canPass, winSize);
                         int skHit = renderer.hitTestSkillSlot(pos3, winSize);
+                        int chHit = renderer.hitTestCharPortrait(pos3, winSize, run.currentCharId(), game);
 
-                        if (skHit >= 0) {
+                        if (chHit == 1) {
+                            renderer.toggleCharTooltip();
+                        } else if (skHit >= 0) {
+                            renderer.closeCharTooltip();
                             // 所有技能均为被动，装备即生效，无需点击
                         } else if (btnHit == 1 && canPlaySelected) {
+                            renderer.closeCharTooltip();
                             auto sorted = selectedIndices;
                             std::sort(sorted.begin(), sorted.end());
                             if (game.playerPlay(sorted)) {
@@ -445,6 +451,7 @@ int main()
                                 }
                             }
                         } else if (btnHit == 2) {
+                            renderer.closeCharTooltip();
                             // 玩家不出
                             game.playerPass();
                             selectedIndices.clear();
@@ -456,6 +463,7 @@ int main()
                             int idx = renderer.hitTestCard(pos3,
                                 (int)game.playerHand().size(), winSize, selectedIndices);
                             if (idx >= 0) {
+                                renderer.closeCharTooltip();
                                 auto it = std::find(selectedIndices.begin(),
                                                     selectedIndices.end(), idx);
                                 if (it != selectedIndices.end())

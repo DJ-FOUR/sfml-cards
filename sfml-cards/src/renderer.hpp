@@ -41,6 +41,8 @@ public:
     int hitTestScheduleButton(const sf::Vector2f& worldPos, sf::Vector2u winSize) const;
     int hitTestSkillSlot(const sf::Vector2f& worldPos, sf::Vector2u winSize) const;
     int hitTestDebugButton(const sf::Vector2f& worldPos, sf::Vector2u winSize) const;
+    int hitTestCharPortrait(const sf::Vector2f& worldPos, sf::Vector2u winSize,
+                            int charId, const GameState& state) const;
 
     // ---- 主菜单 ----
     void drawMainMenu(sf::Vector2u winSize, const sf::Vector2f& mousePos);
@@ -124,6 +126,7 @@ private:
     sf::Texture m_backTexture;
     sf::Texture m_bgTexture;
     sf::Texture m_gameBgTexture;
+    sf::Texture m_battleBgTexture;     // 对战界面专用背景
     sf::Texture m_charTextures[CHAR_COUNT];        // 角色选择立绘 (char0/1/2.png)
     sf::Texture m_battleCharTextures[CHAR_COUNT]; // 对战立绘 (char_0/1/_2.png)
     sf::Texture m_skillTextures[SKILL_COUNT];     // 技能卡牌图片 (skill00/01/02.png)
@@ -185,6 +188,10 @@ private:
                        sf::RenderTarget* target = nullptr);
     sf::FloatRect skillCardRect(int idx, int total, sf::Vector2u winSize) const;
 
+    // 角色立绘悬停提示
+    void drawCharTooltip(float w, float h, sf::FloatRect charRect,
+                         const std::wstring& passiveName, const std::wstring& passiveDesc);
+
     // ---------- 角色卡片悬停交互 ----------
     static constexpr unsigned CHAR_RT_W = 500;
     static constexpr unsigned CHAR_RT_H = 857;  // 与 char0/1/2.png 分辨率一致，避免模糊
@@ -243,6 +250,14 @@ private:
     bool  m_wasSchedulePlay = false;    // 上一帧是否在调度阶段
     bool  m_pendingScheduleFly = false; // 卡牌动画结束后再启动立绘飞行
     GameState::Phase m_prevPhase = GameState::Phase::PlayerTurn;
+
+    // 角色立绘悬停/点击
+    float m_charPortraitLift = 0.f;   // 悬停上移量 (lerp)
+    bool  m_charTooltipOpen = false;  // 点击切换被动描述面板
+public:
+    void toggleCharTooltip() { m_charTooltipOpen = !m_charTooltipOpen; }
+    void closeCharTooltip() { m_charTooltipOpen = false; }
+private:
 
     static constexpr float DEAL_STAGGER   = 0.08f;
     static constexpr float DEAL_DURATION  = 0.60f;
