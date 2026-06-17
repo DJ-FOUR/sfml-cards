@@ -40,9 +40,22 @@ public:
     int  wildcardRank() const { return m_wildcardRank; }
     void setWildcardRank(int r) { m_wildcardRank = r; }
 
+    // 积分系统
+    int  totalScore() const { return m_totalScore; }
+    int  highScore()  const { return m_highScore; }
+    int  roundScore() const { return m_roundScore; }
+    void addScore(int score);
+    void updateHighScore();
+    void resetScore() { m_totalScore = 0; m_roundScore = 0; }
+    void loadHighScore();
+    void saveHighScore() const;
+
 private:
     int  m_level = 1;
     int  m_charId = 0;
+    int  m_totalScore = 0;
+    int  m_highScore  = 0;
+    int  m_roundScore = 0;
 
     std::vector<int>          m_acquired;   // 已获得技能id列表
     std::array<int, MAX_SKILL_SLOTS> m_equipped = {-1, -1, -1};

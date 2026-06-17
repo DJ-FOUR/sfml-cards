@@ -51,6 +51,7 @@ public:
     void setPlayerWildcard(int rank) { m_playerBuffs.wildcardRank = rank; }
     // 设置角色被动: 炸弹收藏家
     void setPlayerIsBombCollector(bool v) { m_isBombCollector = v; }
+    bool isBombCollector() const { return m_isBombCollector; }
     // 设置角色被动: 掌控者
     void setPlayerIsScheduler(bool v) { m_isScheduler = v; }
     // 设置玩家装备的技能槽 — 自动应用所有被动效果
@@ -122,6 +123,9 @@ public:
 
     // AI 学习记忆 (由 main.cpp 管理生命周期)
     void setAIMemory(AIMemory* mem) { m_aiMemory = mem; }
+
+    // 积分计算 (剩余手牌越多分越高)
+    int  calculateScore() const;
 
     // 开发者调试
     void forceWin()  { m_phase = Phase::PlayerWins; }

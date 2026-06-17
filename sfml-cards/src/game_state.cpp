@@ -1568,3 +1568,11 @@ std::vector<Card> GameState::computerTakeTurn()
     return played;
 }
 
+int GameState::calculateScore() const
+{
+    int score = 0;
+    for (auto& c : m_computerHand)
+        score += doudizhuOrder(c.rank) + 1;  // 每张牌按点数计分
+    return score * 10;
+}
+

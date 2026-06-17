@@ -507,6 +507,16 @@ void Renderer::updateAnimations(float dt)
             m_flyProgress = -1.f;      // 动画结束
     }
 
+    // 胜利积分动画计时
+    if (m_scoreAnimPhase >= 0) {
+        m_scoreAnimTimer += dt;
+        if (m_scoreAnimPhase == 0 && m_scoreAnimTimer >= m_scoreFlipEndTime) {
+            m_scoreAnimPhase = 1;       // 翻牌完成 → 等待点击
+        }
+        if (m_scoreAnimPhase == 2 && m_scoreAnimTimer >= 0.8f) {
+            m_scoreAnimPhase = -1;      // 飞行完成 → 结束
+        }
+    }
 }
 
 void Renderer::playHoverTick()
@@ -527,6 +537,28 @@ void Renderer::setSoundVolume(float v)
     m_soundVolume = std::clamp(v, 0.f, 100.f);
     if (m_hoverSnd) m_hoverSnd->setVolume(m_soundVolume);
 }
+
+void Renderer::startScoreAnim(const std::vector<Card>& enemyCards, int score)
+{
+    m_scoreAnimCards = enemyCards;
+    m_scoreAnimValue = score;
+    m_scoreAnimPhase = 0;
+    m_scoreAnimTimer = 0.f;
+    // 翻牌时间根据卡牌数量自动调整
+    int n = (int)enemyCards.size();
+    m_scoreFlipEndTime = n * 0.08f + 0.6f;  // 最后一张翻完的时间
+    if (m_scoreFlipEndTime < 1.0f) m_scoreFlipEndTime = 1.0f;
+}
+
+void Renderer::advanceScoreAnim()
+{
+    if (m_scoreAnimPhase == 1) {  // 等待点击 → 飞行
+        m_scoreAnimPhase = 2;
+        m_scoreAnimTimer = 0.f;
+    }
+}
+
+bool Renderer::isScoreAnimating() const { return m_scoreAnimPhase >= 0; }
 
 void Renderer::startTransitionFly(sf::Vector2f src, sf::Vector2f dst, int skillId,
                                    bool toSlot, int poolIdx, int slotIdx)
@@ -686,6 +718,73 @@ void Renderer::drawBackButton(sf::Vector2u winSize, const sf::Vector2f& mousePos
         tooth.setFillColor(gHover ? STREET_CYAN : TEXT_DIM);
         m_window.draw(tooth);
     }
+}
+
+// ====== 通用: 积分显示 ======
+
+void Renderer::drawHighScore(sf::Vector2u winSize, int highScore)
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    std::wstring text = L"历史最高 " + std::to_wstring(highScore);
+    sf::Text hsText(m_font, text, (unsigned)(h * 0.028f));
+    hsText.setFillColor(OUTLINE_BLACK);
+    hsText.setStyle(sf::Text::Bold);
+    auto sz = hsText.getGlobalBounds().size;
+    float bx = w - sz.x - 24.f;
+    float by = h * 0.028f;
+    sf::RectangleShape bg({sz.x + 20.f, sz.y + 12.f});
+    bg.setPosition({bx - 6.f, by - 4.f});
+    bg.setFillColor(sf::Color::White);
+    bg.setOutlineColor(OUTLINE_BLACK);
+    bg.setOutlineThickness(2.f);
+    m_window.draw(bg);
+    hsText.setPosition({bx + 4.f, by});
+    m_window.draw(hsText);
+}
+
+void Renderer::drawTotalScore(sf::Vector2u winSize, int totalScore)
+{
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    std::wstring text = L"累计 " + std::to_wstring(totalScore);
+    sf::Text tsText(m_font, text, (unsigned)(h * 0.028f));
+    tsText.setFillColor(OUTLINE_BLACK);
+    tsText.setStyle(sf::Text::Bold);
+    auto sz = tsText.getGlobalBounds().size;
+    float bx = w - sz.x - 24.f;
+    float by = h * 0.028f;
+    sf::RectangleShape bg({sz.x + 20.f, sz.y + 12.f});
+    bg.setPosition({bx - 6.f, by - 4.f});
+    bg.setFillColor(sf::Color::White);
+    bg.setOutlineColor(OUTLINE_BLACK);
+    bg.setOutlineThickness(2.f);
+    m_window.draw(bg);
+    tsText.setPosition({bx + 4.f, by});
+    m_window.draw(tsText);
+}
+
+void Renderer::drawRoundScore(sf::Vector2u winSize, int roundScore, int totalScore)
+{
+    (void)roundScore;
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    // 累计积分
+    std::wstring text = L"累计 " + std::to_wstring(totalScore);
+    sf::Text tsText(m_font, text, (unsigned)(h * 0.024f));
+    tsText.setFillColor(OUTLINE_BLACK);
+    tsText.setStyle(sf::Text::Bold);
+    auto sz = tsText.getGlobalBounds().size;
+    float bx = w - sz.x - 80.f;
+    float by = h * 0.69f;
+    sf::RectangleShape bg({sz.x + 20.f, sz.y + 12.f});
+    bg.setPosition({bx - 6.f, by - 4.f});
+    bg.setFillColor(sf::Color::White);
+    bg.setOutlineColor(OUTLINE_BLACK);
+    bg.setOutlineThickness(2.f);
+    m_window.draw(bg);
+    tsText.setPosition({bx + 4.f, by});
+    m_window.draw(tsText);
 }
 
 // ====== 通用: 菜单按钮 ======
@@ -870,6 +969,7 @@ void Renderer::drawSkillCard(float x, float y, float w, float h,
 void Renderer::drawMainMenu(sf::Vector2u winSize, const sf::Vector2f& mousePos)
 {
     drawBackground(winSize);
+    drawBackButton(winSize, mousePos);
     // [IMG-LOGO] 标题区
     drawTitle(L"斗牌ROGUE", 0.15f, winSize);
 
@@ -1084,7 +1184,7 @@ sf::FloatRect Renderer::transitionPoolCardRect(int cardIndex, sf::Vector2u winSi
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
-    float cardH = h * 0.16f;
+    float cardH = h * 0.20f;
     float cardW = cardH * CARD_W / CARD_H;
     float poolX = w * 0.06f;
     float poolY = h * 0.14f;
@@ -1163,6 +1263,17 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     float colGap = w * 0.03f;
     float rowGap = h * 0.015f;
     static constexpr int POOL_COLS = 2;
+    // 白底黑边背景
+    int poolRows = ((int)acquiredSkills.size() + POOL_COLS - 1) / POOL_COLS;
+    if (poolRows < 1) poolRows = 1;
+    float poolBgW = POOL_COLS * poolCardW + (POOL_COLS - 1) * colGap + 24.f;
+    float poolBgH = poolRows * poolCardH + (poolRows - 1) * rowGap + 24.f;
+    sf::RectangleShape poolBg({poolBgW, poolBgH});
+    poolBg.setPosition({poolX2 - 12.f, poolY - 12.f});
+    poolBg.setFillColor(sf::Color::White);
+    poolBg.setOutlineColor(OUTLINE_BLACK);
+    poolBg.setOutlineThickness(3.f);
+    m_window.draw(poolBg);
 
     sf::Text heading(m_font, L"已获得协议", (unsigned)(h * 0.028f));
     heading.setFillColor(TEXT_DIM);
@@ -1227,6 +1338,16 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     slotHeading.setFillColor(TEXT_DIM);
     slotHeading.setPosition({rightX, slotStartY - h * 0.04f});
     m_window.draw(slotHeading);
+
+    // 白底黑边
+    float slotBgW = MAX_SKILL_SLOTS * slotW + (MAX_SKILL_SLOTS - 1) * slotGap + 24.f;
+    float slotBgH = slotH + 24.f;
+    sf::RectangleShape slotBg({slotBgW, slotBgH});
+    slotBg.setPosition({rightX - 12.f, slotStartY - 12.f});
+    slotBg.setFillColor(sf::Color::White);
+    slotBg.setOutlineColor(OUTLINE_BLACK);
+    slotBg.setOutlineThickness(3.f);
+    m_window.draw(slotBg);
 
     for (int i = 0; i < MAX_SKILL_SLOTS; ++i) {
         int sid = equipped[i];
@@ -1376,11 +1497,6 @@ void Renderer::drawTransition(sf::Vector2u winSize, const sf::Vector2f& mousePos
     drawBeveledRect(m_window, btnX, btnY, btnW, btnH, btnCut,
                     btnFill, btnOutline, 4.f);
 
-    if (fightHover) {
-        drawHazardStripes(m_window, btnX, btnY + 2.f, btnW, 4.f, 8.f);
-        drawHazardStripes(m_window, btnX, btnY + btnH - 6.f, btnW, 4.f, 8.f);
-    }
-
     float fontSize = btnH * 0.35f;
     sf::Text fightText(m_font, L"开始战斗", (unsigned)fontSize);
     fightText.setFillColor(fightHover ? STREET_WHITE : OUTLINE_BLACK);
@@ -1474,6 +1590,7 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
                            const std::vector<int>& acquiredSkills)
 {
     drawBackground(winSize, true);
+    drawBackButton(winSize, mousePos);
     drawTitle(acquiredSkills.empty() ? L"获取协议" : L"奖励结算", 0.07f, winSize);
 
     float w = (float)winSize.x;
@@ -1558,6 +1675,13 @@ void Renderer::drawReward(sf::Vector2u winSize, const sf::Vector2f& mousePos,
 
 int Renderer::hitReward(const sf::Vector2f& pos, sf::Vector2u winSize)
 {
+    // 设置齿轮
+    float w = (float)winSize.x;
+    float h = (float)winSize.y;
+    float gbSz = h * 0.04f;
+    float gbX = w * 0.03f, gbY = h * 0.03f;
+    if (sf::FloatRect({gbX, gbY}, {gbSz, gbSz}).contains(pos)) return 9;
+
     for (int i = 0; i < 3; ++i) {
         auto baseRect = skillCardRect(i, 3, winSize);
         float curS = m_skillHover[i].currentScale;
@@ -1917,7 +2041,8 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     m_statusText->setPosition({stX, stY});
     m_window.draw(*m_statusText);
 
-    // 炸弹收藏家印记显示（荧光粉星星图标 + 黑底背景 + 红色斜条纹）
+    // 炸弹收藏家印记显示（仅炸弹收藏家可见）
+    if (state.isBombCollector()) {
     float bmH = h * 0.019f;
     float bmX = w * 0.78f;
     float bmY = h * 0.965f;
@@ -1960,12 +2085,13 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         }
     }
 
-    // 印记文字
-    sf::Text bmLabel(m_font, L"印记 " + std::to_wstring(marks) + L"/3",
+    // 炸弹印记文字
+    sf::Text bmLabel(m_font, L"炸弹印记 " + std::to_wstring(marks) + L"/3",
                      (unsigned)(bmH * 0.9f));
     bmLabel.setFillColor(marks > 0 ? STREET_PINK : TEXT_DIM);
     bmLabel.setPosition({bmX + 3 * (bmH + 8.f) + 6.f, bmY - 2.f});
     m_window.draw(bmLabel);
+    }
 
     // 开发者调试按钮 (DEV-ONLY) — 暗红低调风格
     if (state.phase() == GameState::Phase::PlayerTurn
@@ -2212,7 +2338,9 @@ void Renderer::renderGame(const GameState& state,
                           const std::array<int, MAX_SKILL_SLOTS>& playerSkillIds,
                           const sf::Vector2f& mousePos,
                           float dt,
-                          int charId)
+                          int charId,
+                          int roundScore,
+                          int totalScore)
 {
     float w = (float)winSize.x;
     float h = (float)winSize.y;
@@ -2270,21 +2398,22 @@ void Renderer::renderGame(const GameState& state,
         auto pos = handCardPos(i, cn, chY, winSize);
         drawCardBack(pos.x, pos.y, hs);
     }
-    m_computerLabel->setString(L"敌方单位");
-    m_computerLabel->setPosition({w * 0.012f, chY - h * 0.007f});
-    m_computerLabel->setFillColor(BATTLE_BLUE);
-    m_window.draw(*m_computerLabel);
-    // 手牌数角标
-    sf::Text cCount(m_font, std::to_wstring(cn), (unsigned)(h * 0.022f));
-    cCount.setFillColor(BATTLE_BLUE);
-    cCount.setStyle(sf::Text::Bold);
-    auto ccsz = cCount.getGlobalBounds().size;
-    sf::RectangleShape cTag({ccsz.x + 12.f, ccsz.y + 6.f});
-    cTag.setPosition({w * 0.012f + m_computerLabel->getGlobalBounds().size.x + 8.f, chY - h * 0.007f});
-    cTag.setFillColor(STREET_PINK);
-    m_window.draw(cTag);
-    cCount.setPosition({w * 0.012f + m_computerLabel->getGlobalBounds().size.x + 8.f + 6.f, chY - h * 0.007f + 2.f});
-    m_window.draw(cCount);
+    // 手牌数（白底黑边 + 红色数字）
+    {
+        sf::Text cCount(m_font, std::to_wstring(cn), (unsigned)(h * 0.024f));
+        cCount.setFillColor(STREET_PINK);
+        cCount.setStyle(sf::Text::Bold);
+        auto sz = cCount.getGlobalBounds().size;
+        float bx = w * 0.03f, by = chY + h * 0.07f;
+        sf::RectangleShape bg({sz.x + 12.f, sz.y + 8.f});
+        bg.setPosition({bx - 2.f, by - 2.f});
+        bg.setFillColor(sf::Color::White);
+        bg.setOutlineColor(OUTLINE_BLACK);
+        bg.setOutlineThickness(2.f);
+        m_window.draw(bg);
+        cCount.setPosition({bx + 4.f, by});
+        m_window.draw(cCount);
+    }
 
     // --- 电脑出的牌 ---
     {
@@ -2572,24 +2701,85 @@ void Renderer::renderGame(const GameState& state,
         }
     }
 
-    m_playerLabel->setString(L"我方单位");
-    m_playerLabel->setPosition({w * 0.012f, phY - h * 0.033f});
-    m_playerLabel->setFillColor(BATTLE_BLUE);
-    m_window.draw(*m_playerLabel);
-    // 手牌数角标
-    sf::Text pCount(m_font, std::to_wstring(pn), (unsigned)(h * 0.022f));
-    pCount.setFillColor(BATTLE_BLUE);
-    pCount.setStyle(sf::Text::Bold);
-    auto pcsz = pCount.getGlobalBounds().size;
-    sf::RectangleShape pTag({pcsz.x + 12.f, pcsz.y + 6.f});
-    pTag.setPosition({w * 0.012f + m_playerLabel->getGlobalBounds().size.x + 8.f, phY - h * 0.033f});
-    pTag.setFillColor(STREET_CYAN);
-    m_window.draw(pTag);
-    pCount.setPosition({w * 0.012f + m_playerLabel->getGlobalBounds().size.x + 8.f + 6.f, phY - h * 0.033f + 2.f});
-    m_window.draw(pCount);
+    // 手牌数（白底黑边 + 蓝色数字）
+    {
+        sf::Text pCount(m_font, std::to_wstring(pn), (unsigned)(h * 0.024f));
+        pCount.setFillColor(BATTLE_BLUE);
+        pCount.setStyle(sf::Text::Bold);
+        auto sz = pCount.getGlobalBounds().size;
+        float bx = w * 0.03f, by = phY + h * 0.05f;
+        sf::RectangleShape bg({sz.x + 12.f, sz.y + 8.f});
+        bg.setPosition({bx - 2.f, by - 2.f});
+        bg.setFillColor(sf::Color::White);
+        bg.setOutlineColor(OUTLINE_BLACK);
+        bg.setOutlineThickness(2.f);
+        m_window.draw(bg);
+        pCount.setPosition({bx + 4.f, by});
+        m_window.draw(pCount);
+    }
 
     // --- UI (含技能/能量) ---
     drawGameUI(state, !state.isNewRound(), canPlaySelected, winSize, playerSkillIds, mousePos, selectedIndices);
+    drawRoundScore(winSize, roundScore, totalScore);
+
+    // --- 胜利积分动画 ---
+    if (m_scoreAnimPhase >= 0) {
+        float t = m_scoreAnimTimer;
+        int n = (int)m_scoreAnimCards.size();
+        float cardW = CARD_W * playedScale(h);
+        float cardH = CARD_H * playedScale(h);
+        float cx = w * 0.5f;
+        float cy = h * 0.5f;
+
+        // 暗色遮罩
+        sf::RectangleShape overlay({w, h});
+        overlay.setFillColor(sf::Color(0, 0, 0, (uint8_t)(160 * std::min(t / 0.3f, 1.f))));
+        m_window.draw(overlay);
+
+        if (m_scoreAnimPhase == 0 || m_scoreAnimPhase == 1) {
+            // 翻牌 + 展示：敌人手牌摊开
+            float totalW = n * cardW * 0.35f;
+            for (int i = 0; i < n; ++i) {
+                float stagger = i * 0.08f;
+                float cardT = std::clamp((t - stagger) / 0.4f, 0.f, 1.f);
+                float sx = cx - totalW / 2.f + i * cardW * 0.35f;
+                float sy = cy - cardH / 2.f;
+                float flipW = cardW * cardT;
+                if (flipW > 0.f) {
+                    float flipX = sx + (cardW - flipW) / 2.f;
+                    auto& tex = m_faceTextures[m_scoreAnimCards[i].imageIndex];
+                    sf::Sprite cs(tex);
+                    cs.setScale({flipW / (float)tex.getSize().x, cardH / (float)tex.getSize().y});
+                    cs.setPosition({flipX, sy});
+                    m_window.draw(cs);
+                }
+            }
+            // 等待点击提示
+            if (m_scoreAnimPhase == 1) {
+                sf::Text hint(m_font, L"点击继续", (unsigned)(h * 0.025f));
+                hint.setFillColor(sf::Color(255, 255, 255, 180));
+                auto hsz = hint.getGlobalBounds().size;
+                hint.setPosition({cx - hsz.x / 2.f, cy + cardH * 0.7f});
+                m_window.draw(hint);
+            }
+        }
+
+        // 分数浮现 + 飞行
+        if (m_scoreAnimPhase == 2) {
+            float scoreAlpha = std::clamp(t / 0.3f, 0.f, 1.f);
+            float scoreScale = 1.f + 0.5f * (1.f - std::min(scoreAlpha, 1.f));
+            std::wstring scoreStr = L"+ " + std::to_wstring(m_scoreAnimValue);
+            sf::Text scoreText(m_font, scoreStr, (unsigned)(h * 0.06f * scoreScale));
+            scoreText.setFillColor(sf::Color(255, 220, 0, (uint8_t)(255 * scoreAlpha)));
+            scoreText.setStyle(sf::Text::Bold);
+            auto ssz = scoreText.getGlobalBounds().size;
+            float fly = std::clamp((t - 0.1f) / 0.5f, 0.f, 1.f);
+            float textX = cx - ssz.x / 2.f + (w - cx - 100.f - ssz.x / 2.f) * fly;
+            float textY = cy + h * 0.39f * fly;
+            scoreText.setPosition({textX, textY});
+            m_window.draw(scoreText);
+        }
+    }
 
     // --- 连击之势: 中央技能卡牌 (手牌之上) ---
     if (state.phase() == GameState::Phase::MomentumPlay) {

@@ -31,7 +31,9 @@ public:
                     const std::array<int, MAX_SKILL_SLOTS>& playerSkillIds,
                     const sf::Vector2f& mousePos,
                     float dt,
-                    int charId);
+                    int charId,
+                    int roundScore,
+                    int totalScore);
     int hitTestCard(const sf::Vector2f& worldPos,
                     int cardCount, sf::Vector2u winSize,
                     const std::vector<int>& selectedIndices) const;
@@ -111,6 +113,14 @@ public:
     SettingsHitResult hitTestSettings(const sf::Vector2f& pos, sf::Vector2u winSize);
     int hitTestSettingsButton(const sf::Vector2f& pos, sf::Vector2u winSize);
 
+    // 积分显示
+    void drawHighScore(sf::Vector2u winSize, int highScore);
+    void drawTotalScore(sf::Vector2u winSize, int totalScore);
+    void drawRoundScore(sf::Vector2u winSize, int roundScore, int totalScore);
+    void startScoreAnim(const std::vector<Card>& enemyCards, int score);
+    void advanceScoreAnim();  // 点击推进到飞行阶段
+    bool isScoreAnimating() const;
+
     // 过渡界面 — 飞牌动画 (双击装备/卸下)
     void startTransitionFly(sf::Vector2f src, sf::Vector2f dst, int skillId,
                             bool toSlot, int poolIdx, int slotIdx);
@@ -133,7 +143,7 @@ private:
     sf::Music   m_bgMusic;
     sf::SoundBuffer m_hoverSndBuf;
     std::unique_ptr<sf::Sound> m_hoverSnd;
-    float m_musicVolume = 40.f;
+    float m_musicVolume = 100.f;
     float m_soundVolume = 100.f;
 
     // 卡牌悬停音效 — 记录上一帧悬停目标，仅在 hover 进入时播放
@@ -248,6 +258,13 @@ private:
     float m_scheduleAnimTimer = 0.f;   // 调度触发动画计时
     float m_scheduleFlyProgress = -1.f; // 调度立绘飞行动画: <0=不活跃, 0→1=飞行中
     bool  m_wasSchedulePlay = false;    // 上一帧是否在调度阶段
+
+    // 胜利积分动画
+    int   m_scoreAnimPhase = -1;        // -1=不活跃, 0=翻牌, 1=等待点击, 2=飞行
+    float m_scoreAnimTimer = 0.f;
+    float m_scoreFlipEndTime = 0.f;
+    std::vector<Card> m_scoreAnimCards;  // 敌人剩余手牌
+    int   m_scoreAnimValue = 0;         // 本局得分
     bool  m_pendingScheduleFly = false; // 卡牌动画结束后再启动立绘飞行
     GameState::Phase m_prevPhase = GameState::Phase::PlayerTurn;
 
