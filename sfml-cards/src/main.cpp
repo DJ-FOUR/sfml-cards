@@ -139,6 +139,23 @@ int main()
                     }
                     continue;
                 }
+                if (key->code == sf::Keyboard::Key::Escape) {
+                    if (screen == Screen::Game || screen == Screen::CharacterSelect
+                        || screen == Screen::WildcardSelect || screen == Screen::Transition) {
+                        previousScreen = screen;
+                        screen = Screen::Settings;
+                    } else if (screen == Screen::Settings) {
+                        screen = previousScreen;
+                    }
+                    continue; // 全局消费Esc，避免Game段重复处理
+                } else if (key->code == sf::Keyboard::Key::R && screen == Screen::Settings) {
+                    if (previousScreen == Screen::Game) {
+                        resetAndDealGame();
+                        screen = Screen::Game;
+                    } else {
+                        renderer.showRestartDenied();
+                    }
+                }
             }
 
             // --- 鼠标移动 (设置界面滑块拖拽) ---
@@ -169,6 +186,13 @@ int main()
                         game = GameState{};
                         aiMemory.clear();
                         screen = Screen::MainMenu;
+                    } else if (hit.action == 5) {
+                        if (previousScreen == Screen::Game) {
+                            resetAndDealGame();
+                            screen = Screen::Game;
+                        } else {
+                            renderer.showRestartDenied();
+                        }
                     } else if (hit.action == 3) {
                         draggingMusicSlider = true;
                         renderer.setMusicVolume(hit.sliderVal);
@@ -395,13 +419,6 @@ int main()
                 if (const auto* btn2 = event->getIf<sf::Event::MouseButtonPressed>()) {
                     if (btn2->button == sf::Mouse::Button::Left) {
                         sf::Vector2f pos2 = window.mapPixelToCoords(btn2->position);
-                        int retHit = renderer.hitTestGameButton(pos2, !game.isNewRound(), winSize);
-                        if (retHit == 3) {
-                            aiMemory.clear();
-                            game = GameState{};
-                            screen = Screen::MainMenu;
-                            continue;
-                        }
                         int setHit = renderer.hitTestSettingsButton(pos2, winSize);
                         if (setHit == 1) {
                             previousScreen = Screen::Game;
@@ -683,7 +700,8 @@ int main()
                 renderer.renderGame(game, selectedIndices, winSize,
                                     canPlaySelected, run.equippedSkills(), mw, 0.f,
                                     run.currentCharId());
-            renderer.drawSettingsPopup(winSize, mw, draggingMusicSlider, draggingSoundSlider);
+            renderer.drawSettingsPopup(winSize, mw, draggingMusicSlider, draggingSoundSlider,
+                                       previousScreen == Screen::Game);
             break;
         }
         window.display();

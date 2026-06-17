@@ -51,6 +51,7 @@ public:
     void setPlayerWildcard(int rank) { m_playerBuffs.wildcardRank = rank; }
     // 设置角色被动: 炸弹收藏家
     void setPlayerIsBombCollector(bool v) { m_isBombCollector = v; }
+    bool isBombCollector() const { return m_isBombCollector; }
     // 设置角色被动: 掌控者
     void setPlayerIsScheduler(bool v) { m_isScheduler = v; }
     // 设置玩家装备的技能槽 — 自动应用所有被动效果

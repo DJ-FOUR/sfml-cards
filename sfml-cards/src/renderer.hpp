@@ -106,10 +106,14 @@ public:
 
     // 设置弹窗
     void drawSettingsPopup(sf::Vector2u winSize, const sf::Vector2f& mousePos,
-                           bool draggingMusic, bool draggingSound);
+                           bool draggingMusic, bool draggingSound, bool canRestart);
     struct SettingsHitResult { int action = 0; float sliderVal = 0.f; };
     SettingsHitResult hitTestSettings(const sf::Vector2f& pos, sf::Vector2u winSize);
     int hitTestSettingsButton(const sf::Vector2f& pos, sf::Vector2u winSize);
+
+    // 设置弹窗内提示闪烁 (无法重开等)
+    float m_restartDeniedTimer = 0.f;
+    void showRestartDenied() { m_restartDeniedTimer = 1.5f; }
 
     // 过渡界面 — 飞牌动画 (双击装备/卸下)
     void startTransitionFly(sf::Vector2f src, sf::Vector2f dst, int skillId,
