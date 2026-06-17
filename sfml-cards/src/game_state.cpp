@@ -964,20 +964,64 @@ bool GameState::scheduleDiscard(const std::vector<int>& handIndices)
     // 这里允许0张，效果和skip一样
 
     if (n > 0) {
-        // 删牌 (降序防索引错位)
+        // 1. 保存弃牌 (用于升级失败时原路返回)
+        std::vector<Card> discarded;
+        for (int i : handIndices)
+            if (i >= 0 && i < (int)m_playerHand.size())
+                discarded.push_back(m_playerHand[i]);
+        // 统计结构
+        std::array<int, DZ_RANKS> discFreq{};
+        for (auto& c : discarded) discFreq[doudizhuOrder(c.rank)]++;
+
+        // 2. 删牌 (降序防索引错位)
         auto sorted = handIndices;
         std::sort(sorted.begin(), sorted.end(), std::greater<int>());
         for (int i : sorted)
             if (i >= 0 && i < (int)m_playerHand.size())
                 m_playerHand.erase(m_playerHand.begin() + i);
 
-        // 补牌
-        int drawn = 0;
-        for (int i = 0; i < n && !m_drawPile.empty(); ++i) {
-            m_playerHand.push_back(m_drawPile.back());
-            m_drawPile.pop_back();
-            drawn++;
+        // 3. 定向补牌: 保持结构，升级点数
+        std::array<int, DZ_RANKS> pileFreq{};
+        for (auto& c : m_drawPile) pileFreq[doudizhuOrder(c.rank)]++;
+
+        std::vector<Card> replacements;
+        for (int r = 0; r < DZ_RANKS; ++r) {
+            int need = discFreq[r];
+            if (need == 0) continue;
+
+            // 收集所有可升级的rank, 随机选
+            std::vector<int> candidates;
+            for (int hr = r + 1; hr < DZ_RANKS; ++hr) {
+                if (pileFreq[hr] >= need) candidates.push_back(hr);
+            }
+            int upRank = -1;
+            if (!candidates.empty())
+                upRank = candidates[std::rand() % candidates.size()];
+
+            if (upRank >= 0) {
+                // 从抽牌堆收集 upRank
+                int collected = 0;
+                auto it = m_drawPile.begin();
+                while (it != m_drawPile.end() && collected < need) {
+                    if (doudizhuOrder(it->rank) == upRank) {
+                        replacements.push_back(*it);
+                        pileFreq[upRank]--;
+                        it = m_drawPile.erase(it);
+                        collected++;
+                    } else { ++it; }
+                }
+            } else {
+                // 无高位 → 原路返回同点数牌
+                for (auto& c : discarded) {
+                    if (doudizhuOrder(c.rank) == r && need > 0) {
+                        replacements.push_back(c);
+                        need--;
+                    }
+                }
+            }
         }
+
+        m_playerHand.insert(m_playerHand.end(), replacements.begin(), replacements.end());
         sortByDZ(m_playerHand, m_playerBuffs.wildcardRank);
     }
 

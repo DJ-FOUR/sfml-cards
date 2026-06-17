@@ -1150,10 +1150,16 @@ void Renderer::drawWildcardSelect(sf::Vector2u winSize, const sf::Vector2f& mous
     }
 
     // 底部提示
+    sf::Text hintSh(m_font, L"选择一张点数作为癞子牌（万能牌）", (unsigned)(h * 0.03f));
+    hintSh.setFillColor(OUTLINE_BLACK);
+    auto hsz = hintSh.getGlobalBounds().size;
+    float hx = (w - hsz.x) / 2.0f, hy = baseY + cardH + h * 0.06f;
+    hintSh.setPosition({hx + 2.f, hy + 2.f});
+    m_window.draw(hintSh);
+
     sf::Text hint(m_font, L"选择一张点数作为癞子牌（万能牌）", (unsigned)(h * 0.03f));
-    hint.setFillColor(sf::Color(160, 160, 160));
-    auto hsz = hint.getGlobalBounds().size;
-    hint.setPosition({(w - hsz.x) / 2.0f, baseY + cardH + h * 0.06f});
+    hint.setFillColor(STREET_WHITE);
+    hint.setPosition({hx, hy});
     m_window.draw(hint);
 }
 
@@ -2006,7 +2012,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
         statusCol = STREET_CYAN;
         break;
     case GameState::Phase::SchedulePlay:
-        statusStr = L"[调度] 选0~3张牌弃掉换牌";
+        statusStr = L"[擢升] 选0~3张牌弃掉换牌";
         statusCol = STREET_CYAN;
         break;
     case GameState::Phase::MomentumPlay:
@@ -2041,7 +2047,7 @@ void Renderer::drawGameUI(const GameState& state, bool canPass, bool canPlaySele
     m_statusText->setPosition({stX, stY});
     m_window.draw(*m_statusText);
 
-    // 炸弹收藏家印记显示（仅炸弹收藏家可见）
+    // 炸弹收藏家印记显示（仅该角色可见）
     if (state.isBombCollector()) {
     float bmH = h * 0.019f;
     float bmX = w * 0.78f;
@@ -2811,7 +2817,7 @@ void Renderer::renderGame(const GameState& state,
         m_window.draw(hint);
     }
 
-    // --- 掌控者「调度」+ 飞行动画 (charId==2) ---
+    // --- 掌控者「擢升」+ 飞行动画 (charId==2) ---
     if (charId == 2) {
         auto& tex = m_battleCharTextures[2];
         auto texSz = tex.getSize();
@@ -2847,10 +2853,9 @@ void Renderer::renderGame(const GameState& state,
             boxX = imgX - 3.f;
             boxY = imgY - 3.f;
         } else if (m_scheduleFlyProgress >= 0.f) {
-            // 阶段2: 飞行动画 (上方 → 右下角)
+            // 阶段2: 飞行动画 (上方中央 → 右下角)
             float t = m_scheduleFlyProgress;
             float ease = t * t * (3.f - 2.f * t);  // smoothstep
-            // 图像尺寸也渐变为目标
             imgH = srcImgH + (dstImgH - srcImgH) * ease;
             imgW = srcImgW + (dstImgW - srcImgW) * ease;
             imgX = srcImgX + (dstBoxX + (dstBoxW - dstImgW) / 2.f - srcImgX) * ease;
@@ -2859,8 +2864,18 @@ void Renderer::renderGame(const GameState& state,
             boxH = imgH + 6.f + (dstBoxH - (imgH + 6.f)) * ease;
             boxX = imgX - 3.f + (dstBoxX - (imgX - 3.f)) * ease;
             boxY = imgY - 3.f + (dstBoxY - (imgY - 3.f)) * ease;
+        } else if (m_pendingScheduleFly) {
+            // 等待飞牌动画结束 → 保持在中央，不跳右下角
+            imgH = srcImgH;
+            imgW = srcImgW;
+            imgX = (w - imgW) / 2.f;
+            imgY = srcImgY;
+            boxW = imgW + 6.f;
+            boxH = imgH + 6.f;
+            boxX = imgX - 3.f;
+            boxY = imgY - 3.f;
         } else {
-            // 阶段3: 右下角固定
+            // 阶段3: 右下角固定 (非调度期间常态)
             imgH = dstImgH;
             imgW = dstImgW;
             imgX = dstBoxX + (dstBoxW - dstImgW) / 2.f;
@@ -2887,7 +2902,7 @@ void Renderer::renderGame(const GameState& state,
         // 调度提示文字
         if (state.phase() == GameState::Phase::SchedulePlay) {
             float hintAlpha = std::clamp((m_scheduleAnimTimer - 0.15f) / 0.25f, 0.f, 1.f);
-            sf::Text hint(m_font, L"掌控者 · 调度 — 选择至多 3 张手牌弃掉换牌",
+            sf::Text hint(m_font, L"掌控者 · 擢升 — 弃牌结构不变，点数随机提升",
                           (unsigned)(h * 0.022f));
             hint.setFillColor(sf::Color(STREET_CYAN.r, STREET_CYAN.g, STREET_CYAN.b,
                                         (uint8_t)(255 * hintAlpha)));
@@ -2945,7 +2960,7 @@ void Renderer::drawCharTooltip(float w, float h, sf::FloatRect charRect,
                                const std::wstring& passiveName, const std::wstring& passiveDesc)
 {
     float tipW = w * 0.18f;
-    float tipH = h * 0.12f;
+    float tipH = h * 0.15f;  // 加高适配多行描述
     float tipX = charRect.position.x - tipW - 16.f;
     float tipY = charRect.position.y + (charRect.size.y - tipH) / 2.f;
 
@@ -2967,25 +2982,52 @@ void Renderer::drawCharTooltip(float w, float h, sf::FloatRect charRect,
 
     // 描述文字 (自动换行)
     float descSize = h * 0.017f;
-    sf::Text descText(m_font, passiveDesc, (unsigned)descSize);
-    descText.setFillColor(TEXT_DIM);
-    auto dsz = descText.getGlobalBounds().size;
+    float maxLineW = tipW - 16.f;
 
-    // 若描述过长则缩小字号
-    if (dsz.x > tipW - 16.f) {
-        descText.setCharacterSize((unsigned)(descSize * 0.85f));
-        dsz = descText.getGlobalBounds().size;
+    // 先试单行
+    sf::Text measure(m_font, passiveDesc, (unsigned)descSize);
+    if (measure.getGlobalBounds().size.x <= maxLineW) {
+        measure.setFillColor(TEXT_DIM);
+        auto dsz = measure.getGlobalBounds().size;
+        measure.setPosition({tipX + (tipW - dsz.x) / 2.f, tipY + tipH * 0.38f});
+        m_window.draw(measure);
+    } else {
+        // 需要换行: 按宽度拆分
+        std::wstring remain = passiveDesc;
+        std::vector<std::wstring> lines;
+        while (!remain.empty()) {
+            // 二分找最大可放下片段的长度
+            int lo = 1, hi = (int)remain.size(), best = 1;
+            while (lo <= hi) {
+                int mid = (lo + hi) / 2;
+                sf::Text probe(m_font, remain.substr(0, mid), (unsigned)descSize);
+                if (probe.getGlobalBounds().size.x <= maxLineW) {
+                    best = mid; lo = mid + 1;
+                } else { hi = mid - 1; }
+            }
+            lines.push_back(remain.substr(0, best));
+            remain = remain.substr(best);
+            if (lines.size() >= 3) break; // 最多3行
+        }
+        float lineH = descSize * 1.35f;
+        float startY = tipY + tipH * 0.25f;
+        for (size_t i = 0; i < lines.size(); ++i) {
+            sf::Text line(m_font, lines[i], (unsigned)descSize);
+            line.setFillColor(TEXT_DIM);
+            auto lsz = line.getGlobalBounds().size;
+            line.setPosition({tipX + (tipW - lsz.x) / 2.f, startY + i * lineH});
+            m_window.draw(line);
+        }
     }
-    descText.setPosition({tipX + (tipW - dsz.x) / 2.f,
-                          tipY + tipH * 0.38f});
-    m_window.draw(descText);
 }
 
 // ====== 设置弹窗 ======
 
 void Renderer::drawSettingsPopup(sf::Vector2u winSize, const sf::Vector2f& mousePos,
-                                  bool draggingMusic, bool draggingSound)
+                                  bool draggingMusic, bool draggingSound, bool canRestart)
 {
+    // 更新重开拒绝计时器
+    if (m_restartDeniedTimer > 0.f) m_restartDeniedTimer -= 0.016f;
     float w = (float)winSize.x;
     float h = (float)winSize.y;
 
@@ -3098,20 +3140,35 @@ void Renderer::drawSettingsPopup(sf::Vector2u winSize, const sf::Vector2f& mouse
     drawSlider(sliderY2, m_soundVolume, STREET_PINK, draggingSound);
 
     // --- 底部按钮 ---
-    float btnW = panelW * 0.32f;
+    float btnW = panelW * 0.26f;
     float btnH = h * 0.06f;
     float btnY = panelY + panelH - btnH - h * 0.06f;
-    float btnGap = panelW * 0.06f;
-    float totalBtnW = btnW * 2 + btnGap;
+    float btnGap = panelW * 0.03f;
+    float totalBtnW = btnW * 3 + btnGap * 2;
     float btnStartX = panelX + (panelW - totalBtnW) / 2.f;
 
-    // 返回主界面按钮
+    // 放弃本轮
     sf::FloatRect menuBtn({btnStartX, btnY}, {btnW, btnH});
     drawMenuButton(menuBtn, L"放弃本轮", true, menuBtn.contains(mousePos), winSize);
 
-    // 关闭按钮
-    sf::FloatRect closeBtn({btnStartX + btnW + btnGap, btnY}, {btnW, btnH});
+    // 重开 (R) — 非对局时变暗
+    float restartX = btnStartX + btnW + btnGap;
+    sf::FloatRect restartBtn({restartX, btnY}, {btnW, btnH});
+    drawMenuButton(restartBtn, L"重开 (R)", canRestart, canRestart && restartBtn.contains(mousePos), winSize);
+
+    // 关闭
+    sf::FloatRect closeBtn({restartX + btnW + btnGap, btnY}, {btnW, btnH});
     drawMenuButton(closeBtn, L"关闭", true, closeBtn.contains(mousePos), winSize);
+
+    // 无法重开提示
+    if (m_restartDeniedTimer > 0.f) {
+        sf::Text denied(m_font, L"现在无法重开！", (unsigned)(h * 0.028f));
+        denied.setFillColor(STREET_PINK);
+        denied.setStyle(sf::Text::Bold);
+        auto dsz = denied.getGlobalBounds().size;
+        denied.setPosition({panelX + (panelW - dsz.x) / 2.f, btnY - h * 0.06f});
+        m_window.draw(denied);
+    }
 }
 
 Renderer::SettingsHitResult Renderer::hitTestSettings(const sf::Vector2f& pos,
@@ -3160,19 +3217,25 @@ Renderer::SettingsHitResult Renderer::hitTestSettings(const sf::Vector2f& pos,
     }
 
     // 返回主界面按钮
-    float btnW = panelW * 0.32f;
+    float btnW = panelW * 0.26f;
     float btnH = h * 0.06f;
     float btnY2 = panelY + panelH - btnH - h * 0.06f;
-    float btnGap = panelW * 0.06f;
-    float totalBtnW = btnW * 2 + btnGap;
+    float btnGap = panelW * 0.03f;
+    float totalBtnW = btnW * 3 + btnGap * 2;
     float btnStartX = panelX + (panelW - totalBtnW) / 2.f;
     if (sf::FloatRect({btnStartX, btnY2}, {btnW, btnH}).contains(pos)) {
         result.action = 2; // 返回主界面
         return result;
     }
 
-    // 关闭按钮
+    // 重开按钮
     if (sf::FloatRect({btnStartX + btnW + btnGap, btnY2}, {btnW, btnH}).contains(pos)) {
+        result.action = 5; // 重开
+        return result;
+    }
+
+    // 关闭按钮
+    if (sf::FloatRect({btnStartX + (btnW + btnGap) * 2, btnY2}, {btnW, btnH}).contains(pos)) {
         result.action = 1; // 关闭
         return result;
     }
@@ -3353,7 +3416,7 @@ int Renderer::hitTestCharPortrait(const sf::Vector2f& worldPos, sf::Vector2u win
     float w = (float)winSize.x;
     float h = (float)winSize.y;
 
-    // 掌控者在调度/飞行期间不响应点击
+    // 掌控者在擢升/飞行期间不响应点击
     if (charId == 2 && (state.phase() == GameState::Phase::SchedulePlay
                         || m_scheduleFlyProgress >= 0.f))
         return 0;

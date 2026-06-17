@@ -108,17 +108,21 @@ public:
 
     // 设置弹窗
     void drawSettingsPopup(sf::Vector2u winSize, const sf::Vector2f& mousePos,
-                           bool draggingMusic, bool draggingSound);
+                           bool draggingMusic, bool draggingSound, bool canRestart);
     struct SettingsHitResult { int action = 0; float sliderVal = 0.f; };
     SettingsHitResult hitTestSettings(const sf::Vector2f& pos, sf::Vector2u winSize);
     int hitTestSettingsButton(const sf::Vector2f& pos, sf::Vector2u winSize);
+
+    // 设置弹窗内提示闪烁 (无法重开等)
+    float m_restartDeniedTimer = 0.f;
+    void showRestartDenied() { m_restartDeniedTimer = 1.5f; }
 
     // 积分显示
     void drawHighScore(sf::Vector2u winSize, int highScore);
     void drawTotalScore(sf::Vector2u winSize, int totalScore);
     void drawRoundScore(sf::Vector2u winSize, int roundScore, int totalScore);
     void startScoreAnim(const std::vector<Card>& enemyCards, int score);
-    void advanceScoreAnim();  // 点击推进到飞行阶段
+    void advanceScoreAnim();
     bool isScoreAnimating() const;
 
     // 过渡界面 — 飞牌动画 (双击装备/卸下)
