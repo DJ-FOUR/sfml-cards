@@ -124,6 +124,9 @@ public:
     // AI 学习记忆 (由 main.cpp 管理生命周期)
     void setAIMemory(AIMemory* mem) { m_aiMemory = mem; }
 
+    // 积分计算 (剩余手牌越多分越高)
+    int  calculateScore() const;
+
     // 开发者调试
     void forceWin()  { m_phase = Phase::PlayerWins; }
     void forceLose() { m_phase = Phase::ComputerWins; }

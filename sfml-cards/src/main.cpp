@@ -30,6 +30,7 @@ int main()
     // ---- 游戏状态 ----
     GameState game;
     RunState  run;
+    run.loadHighScore();
     AIMemory  aiMemory;
     std::vector<int> selectedIndices;
     sf::Clock aiClock;
@@ -72,6 +73,7 @@ int main()
 
     // ---- 游戏阶段状态 ----
     bool phaseHandled = false;
+    bool scoreAnimTriggered = false;
     std::vector<int> rewardSkills; // 当前奖励界面的3个技能
     bool skillToggled[MAX_SKILL_SLOTS] = {}; // 技能槽toggle状态
 
@@ -96,6 +98,8 @@ int main()
         renderer.resetSkillSlotAnims();
         renderer.closeCharTooltip();
         for (auto& t : skillToggled) t = false;
+        phaseHandled = false;
+        scoreAnimTriggered = false;
         renderer.startDealAnimation((int)game.playerHand().size());
     };
 
@@ -183,6 +187,7 @@ int main()
                     if (hit.action == 1) {
                         screen = previousScreen;
                     } else if (hit.action == 2) {
+                        run.updateHighScore();
                         game = GameState{};
                         aiMemory.clear();
                         screen = Screen::MainMenu;
@@ -206,6 +211,12 @@ int main()
                 // ========== 主菜单 ==========
                 if (screen == Screen::MainMenu) {
                     sf::Vector2f pos = window.mapPixelToCoords(btn->position);
+                    int setHit = renderer.hitTestSettingsButton(pos, winSize);
+                    if (setHit == 1) {
+                        previousScreen = Screen::MainMenu;
+                        screen = Screen::Settings;
+                        continue;
+                    }
                     int hit = renderer.hitMainMenu(pos, winSize);
                     if (hit == 1) {
                         screen = Screen::CharacterSelect;
@@ -357,6 +368,7 @@ int main()
                     }
                     int hit = renderer.hitGameOver(pos, winSize);
                     if (hit == 1) {
+                        run.updateHighScore();
                         game = GameState{};  // 重置全部状态（含炸弹印记）
                         screen = Screen::MainMenu;
                     }
@@ -415,6 +427,13 @@ int main()
                     }
                 }
 
+                // 胜利积分动画点击继续
+                if (scoreAnimTriggered) {
+                    if (const auto* scBtn = event->getIf<sf::Event::MouseButtonPressed>()) {
+                        if (scBtn->button == sf::Mouse::Button::Left)
+                            renderer.advanceScoreAnim();
+                    }
+                }
                 // 返回按钮 / 调试按钮
                 if (const auto* btn2 = event->getIf<sf::Event::MouseButtonPressed>()) {
                     if (btn2->button == sf::Mouse::Button::Left) {
@@ -626,6 +645,14 @@ int main()
             // 胜利/失败转换
             if (game.phase() == GameState::Phase::PlayerWins && !phaseHandled) {
                 phaseHandled = true;
+                int score = game.calculateScore();
+                run.addScore(score);
+                auto enemyCards = game.computerHand();  // 捕获敌人剩余手牌
+                renderer.startScoreAnim(enemyCards, score);
+                scoreAnimTriggered = true;
+            }
+            if (scoreAnimTriggered && !renderer.isScoreAnimating()) {
+                scoreAnimTriggered = false;
                 if ((int)run.acquiredSkills().size() >= SKILL_COUNT) {
                     run.advanceToNextLevel();
                     screen = Screen::Transition;
@@ -668,12 +695,15 @@ int main()
         switch (screen) {
         case Screen::MainMenu:
             renderer.drawMainMenu(winSize, mw);
+            renderer.drawHighScore(winSize, run.highScore());
             break;
         case Screen::CharacterSelect:
             renderer.drawCharacterSelect(winSize, mw);
+            renderer.drawHighScore(winSize, run.highScore());
             break;
         case Screen::WildcardSelect:
             renderer.drawWildcardSelect(winSize, mw);
+            renderer.drawTotalScore(winSize, run.totalScore());
             break;
         case Screen::Transition:
             renderer.drawTransition(winSize, mw,
@@ -681,25 +711,28 @@ int main()
                 run.equippedSkills(), run.mirroredSkills(),
                 hoveredAcquiredIdx, hoveredSlotIdx,
                 dragSourceType, dragSourceIndex, dragSkillId, dragActive);
+            renderer.drawTotalScore(winSize, run.totalScore());
             break;
         case Screen::Game:
             renderer.renderGame(game, selectedIndices, winSize,
                               canPlaySelected, run.equippedSkills(), mw, dt,
-                              run.currentCharId());
+                              run.currentCharId(), run.roundScore(), run.totalScore());
             break;
         case Screen::Reward:
             renderer.drawReward(winSize, mw, rewardSkills, run.acquiredSkills());
+            renderer.drawTotalScore(winSize, run.totalScore());
             break;
         case Screen::GameOver:
             renderer.drawGameOver(winSize, mw,
                 run.currentLevel(), (int)run.acquiredSkills().size());
+            renderer.drawTotalScore(winSize, run.totalScore());
             break;
         case Screen::Settings:
             // 绘制底层游戏画面 (冻结)
             if (previousScreen == Screen::Game)
                 renderer.renderGame(game, selectedIndices, winSize,
                                     canPlaySelected, run.equippedSkills(), mw, 0.f,
-                                    run.currentCharId());
+                                    run.currentCharId(), run.roundScore(), run.totalScore());
             renderer.drawSettingsPopup(winSize, mw, draggingMusicSlider, draggingSoundSlider,
                                        previousScreen == Screen::Game);
             break;

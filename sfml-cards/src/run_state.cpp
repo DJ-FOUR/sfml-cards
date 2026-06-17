@@ -1,6 +1,7 @@
 #include "run_state.hpp"
 #include "character.hpp"
 #include <algorithm>
+#include <fstream>
 #include <random>
 
 RunState::RunState()
@@ -17,6 +18,8 @@ void RunState::startNewRun(int characterId)
     m_equipped = {-1, -1, -1};
     m_mirroredSkills = {-1, -1, -1};
     m_wildcardRank = -1;
+    m_totalScore = 0;
+    m_roundScore = 0;
 }
 
 void RunState::advanceToNextLevel()
@@ -90,4 +93,36 @@ std::vector<int> RunState::rollRewardSkills()
     std::shuffle(pool.begin(), pool.end(), m_rng);
     pool.resize(3);
     return pool;
+}
+
+void RunState::addScore(int score)
+{
+    m_roundScore = score;
+    m_totalScore += score;
+}
+
+void RunState::updateHighScore()
+{
+    if (m_totalScore > m_highScore) {
+        m_highScore = m_totalScore;
+        saveHighScore();
+    }
+}
+
+void RunState::loadHighScore()
+{
+    std::ifstream f("highscore.txt");
+    if (f.is_open()) {
+        f >> m_highScore;
+        f.close();
+    }
+}
+
+void RunState::saveHighScore() const
+{
+    std::ofstream f("highscore.txt");
+    if (f.is_open()) {
+        f << m_highScore;
+        f.close();
+    }
 }
